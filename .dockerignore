@@ -1,0 +1,13 @@
+node_modules
+dist
+dist-ssr
+*.local
+.env.development.local
+.env.test.local
+.env.production.local
+.env.local
+.vscode
+.git
+.gitignore
+Dockerfile
+.dockerignore
