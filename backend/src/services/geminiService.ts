@@ -1,69 +1,139 @@
+import { GoogleGenerativeAI, Content } from "@google/generative-ai";
+import dotenv from 'dotenv';
+
+// 환경 변수 로드
+dotenv.config();
+
 /**
  * geminiService.ts
  * 
- * 이 서비스는 Google Gemini API와 상호작용하는 모든 로직을 담당합니다.
- * 현재는 실제 API 호출 대신 모의(mock) 데이터를 반환합니다.
+ * 이 서비스는 Google Gemini API와 상호작용하는 모든 로직을 담당하며,
+ * 동적 모델 선택 및 목록 관리 기능을 포함합니다.
  */
+
+const getGenAI = () => {
+    const apiKey = process.env.GEMINI_API_KEY;
+    if (!apiKey) return null;
+    return new GoogleGenerativeAI(apiKey);
+};
+
+const genAI = getGenAI();
+
+// 현재 선택된 모델 (기본값 설정)
+let currentModelName = "gemini-1.5-flash";
+
+/**
+ * 현재 사용 중인 모델명을 반환합니다.
+ */
+export const getCurrentModel = () => currentModelName;
+
+/**
+ * 사용할 모델을 동적으로 변경합니다.
+ * @param modelName 변경할 모델명 (예: 'gemini-2.0-flash')
+ */
+export const setCurrentModel = (modelName: string) => {
+    console.log(`[geminiService] 모델 변경됨: ${currentModelName} -> ${modelName}`);
+    currentModelName = modelName;
+};
+
+/**
+ * 현재 API 키로 사용 가능한 모델 목록을 조회합니다.
+ */
+export const listAvailableModels = async () => {
+    if (!genAI) throw new Error('API Key missing');
+    
+    try {
+        // HTTP 요청을 통해 가용 모델 목록을 직접 조회 (SDK 제약 회피)
+        const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models?key=${process.env.GEMINI_API_KEY}`);
+        const data = await response.json();
+        
+        if (!data.models) return [];
+        
+        // 생성(generateContent)을 지원하는 모델만 필터링
+        return data.models
+            .filter((m: any) => m.supportedGenerationMethods.includes('generateContent'))
+            .map((m: any) => ({
+                name: m.name.replace('models/', ''),
+                displayName: m.displayName,
+                description: m.description
+            }));
+    } catch (error: any) {
+        console.error('[geminiService] 모델 목록 조회 오류:', error.message);
+        return [];
+    }
+};
 
 /**
  * 사용자의 입력을 기반으로 AI 진단 결과를 요청하고 반환합니다.
- * @param userInput 사용자가 입력한 프로젝트 문제점
- * @returns AI가 생성한 진단 및 해결책
  */
 export const getAiDiagnosis = async (userInput: string): Promise<string> => {
-    console.log(`[geminiService] Received input for diagnosis: "${userInput}"`);
+    console.log(`[geminiService] 진단 요청 (모델: ${currentModelName}): "${userInput}"`);
 
-    // --- 실제 Gemini API 호출 로직 (향후 구현) ---
-    // const { GoogleGenerativeAI } = require("@google/generative-ai");
-    // const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
-    // const model = genAI.getGenerativeModel({ model: "gemini-pro"});
-    // const prompt = `...`;
-    // const result = await model.generateContent(prompt);
-    // const response = await result.response;
-    // const text = response.text();
-    // return text;
-    // -----------------------------------------
+    if (!genAI) return "API 키가 설정되지 않았습니다.";
 
-    // 현재는 2초 지연 후 모의 응답을 반환합니다.
-    await new Promise(resolve => setTimeout(resolve, 2000));
-
-    const mockResponse = `
-### AI 진단 결과: React 프로젝트 초기 로딩 속도 저하
-
-**1. 원인 분석:**
-   - **거대한 Vendor 번들:** 'node_modules'의 많은 라이브러리가 단일 'vendors.js' 파일로 번들링되어 초기 다운로드 크기가 증가했습니다.
-   - **이미지 최적화 부재:** 고해상도 이미지가 원본 그대로 사용되어 리소스 로딩 시간을 지연시키고 있습니다.
-   - **불필요한 리렌더링:** 일부 컴포넌트에서 memoization이 적용되지 않아 상태 변경 시 과도한 리렌더링이 발생합니다.
-
-**2. 해결 프로토콜:**
-   - **Code Splitting (코드 분할):** 'React.lazy()'와 'Suspense'를 사용하여 라우트 기반으로 코드를 분할하세요. 사용자가 특정 페이지에 접근할 때만 해당 페이지의 코드를 로드합니다.
-   - **이미지 최적화:** 이미지를 WebP와 같은 차세대 포맷으로 변환하고, '<picture>' 태그를 사용하여 다양한 해상도의 이미지를 제공하세요.
-   - **Memoization 적용:** 'React.memo' HOC를 사용하여 불필요한 리렌더링이 발생하는 컴포넌트를 감싸세요. 특히, props가 자주 변경되지 않는 순수 컴포넌트에 효과적입니다.
-`;
-
-    console.log('[geminiService] Returning mock diagnosis.');
-    return mockResponse;
+    try {
+        const model = genAI.getGenerativeModel({ model: currentModelName });
+        const result = await model.generateContent(`
+            당신은 Nura AI입니다. 다음 문제를 분석하여 마크다운 형식의 전문적인 프로토콜을 생성하세요:
+            "${userInput}"
+        `);
+        const response = await result.response;
+        return response.text();
+    } catch (error: any) {
+        console.error('[geminiService] 진단 오류:', error.message);
+        throw error;
+    }
 };
 
 /**
  * 사용자의 채팅 메시지에 대한 AI 응답을 반환합니다.
- * @param message 사용자 메시지
- * @returns AI 응답 메시지
  */
 export const getAiChatResponse = async (message: string): Promise<string> => {
-    console.log(`[geminiService] Received chat message: "${message}"`);
+    console.log(`[geminiService] 채팅 수신 (모델: ${currentModelName}): "${message}"`);
 
-    // 모의 지연
-    await new Promise(resolve => setTimeout(resolve, 1000));
+    if (!genAI) return "API 연동 대기 중...";
 
-    // 간단한 키워드 기반 모의 응답 로직 (데모용)
-    if (message.includes('안녕')) {
-        return "안녕하세요! Nura Health AI 어시스턴트입니다. 무엇을 도와드릴까요?";
-    } else if (message.includes('느려') || message.includes('속도')) {
-        return "프로젝트 속도 문제로 고민이시군요. 'AI 진단' 기능을 통해 구체적인 원인을 분석해보시는 건 어떨까요? 대시보드의 'AI 진단 시작' 버튼을 눌러보세요.";
-    } else if (message.includes('오류') || message.includes('에러')) {
-        return "발생한 에러 로그를 공유해주시면 더 정확한 분석이 가능합니다. 또는 '데이터 스트리머' 패널에서 실시간 로그 분석을 확인하실 수 있습니다.";
+    try {
+        const model = genAI.getGenerativeModel({ model: currentModelName });
+        const chat = model.startChat({
+            history: [
+                { role: "user", parts: [{ text: "안녕, 너는 Nura Health의 AI 어시스턴트야." }] },
+                { role: "model", parts: [{ text: "안녕하세요! Nura Health의 AI 어시스턴트 Nura입니다. 무엇을 도와드릴까요?" }] },
+            ],
+        });
+
+        const result = await chat.sendMessage(message);
+        const response = await result.response;
+        return response.text();
+    } catch (error: any) {
+        console.error('[geminiService] 채팅 오류 상세:', error.message);
+        return `오류 발생 (${currentModelName}): ${error.message}. 다른 모델을 선택해 보세요.`;
     }
+};
 
-    return "죄송합니다. 아직 학습 중이라 정확히 이해하지 못했습니다. 프로젝트 최적화나 진단에 대해 질문해주시면 답변해 드리겠습니다.";
+/**
+ * 사용자의 채팅 메시지에 대해 스트리밍 형식으로 AI 응답을 반환합니다.
+ */
+export const getAiChatStreamResponse = async (message: string, history: Content[] = []) => {
+    console.log(`[geminiService] 스트리밍 수신 (모델: ${currentModelName}): "${message}"`);
+
+    if (!genAI) throw new Error('API Key missing');
+
+    try {
+        const model = genAI.getGenerativeModel({ model: currentModelName });
+        
+        // Gemini 규칙: 히스토리는 반드시 'user'로 시작해야 함
+        let sanitizedHistory = [...history];
+        if (sanitizedHistory.length > 0 && sanitizedHistory[0].role === 'model') {
+            console.log('[geminiService] 첫 번째 메시지가 model이므로 제거하여 규칙 준수');
+            sanitizedHistory.shift();
+        }
+
+        const chat = model.startChat({ history: sanitizedHistory });
+        const result = await chat.sendMessageStream(message);
+        return result.stream;
+    } catch (error: any) {
+        console.error('[geminiService] 스트리밍 오류:', error.message);
+        throw error;
+    }
 };
