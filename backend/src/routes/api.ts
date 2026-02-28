@@ -29,15 +29,27 @@ router.get('/github/repos', async (req: Request, res: Response) => {
         qaLogger.info('github.repos_request_start', { hasToken: !!token });
         const repos = await githubService.fetchUserRepos(token);
         
-        if (!Array.isArray(repos)) {
+        if (!repos || !Array.isArray(repos)) {
             qaLogger.error('github.repos_invalid_format', { type: typeof repos });
-            return res.json({ repos: [] });
+            return res.status(500).json({ error: 'GitHub API returned an invalid response format' });
         }
 
         qaLogger.info('github.repos_fetched_success', { count: repos.length });
         res.json({ repos });
     } catch (error: any) {
-        // ... (생략)
+        const errorMessage = error.response?.data?.message || error.message;
+        const statusCode = error.response?.status || 500;
+        
+        qaLogger.error('github.repos_fetch_failed', {
+            message: errorMessage,
+            status: statusCode,
+            data: error.response?.data
+        });
+        
+        res.status(statusCode).json({ 
+            error: `GitHub API Error: ${errorMessage}`,
+            details: error.response?.data 
+        });
     }
 });
 
@@ -154,6 +166,13 @@ router.post('/chat/stream', async (req: Request, res: Response) => {
         return res.status(400).json({ error: 'message field is required.' });
     }
 
+    // [보안] GITHUB_TOKEN 안전성 확보
+    const token = process.env.GITHUB_TOKEN;
+    if (!token) {
+        qaLogger.error('github.config_missing', 'GITHUB_TOKEN is not configured');
+        return res.status(500).json({ error: 'GitHub configuration missing on server' });
+    }
+
     qaLogger.info('chat.stream_started', { model, repo: selectedRepo?.full_name });
 
     // SSE 설정을 위한 헤더
@@ -162,7 +181,6 @@ router.post('/chat/stream', async (req: Request, res: Response) => {
     res.setHeader('Connection', 'keep-alive');
 
     try {
-        const token = process.env.GITHUB_TOKEN!;
         const repoContext = selectedRepo ? `Repository: ${selectedRepo.full_name}` : undefined;
         
         let result = await getAiChatStreamResponse(message, history, repoContext);
@@ -182,41 +200,55 @@ router.post('/chat/stream', async (req: Request, res: Response) => {
             for (const call of calls) {
                 qaLogger.info('mcp.tool_called', { tool: call.name, args: call.args });
                 
-                let toolResult;
-                if (call.name === 'list_files' && selectedRepo) {
-                    const [owner, repo] = selectedRepo.full_name.split('/');
-                    toolResult = await githubService.fetchRepoContent(token, owner, repo, (call.args as any).path || '');
-                } else if (call.name === 'read_file' && selectedRepo) {
-                    const [owner, repo] = selectedRepo.full_name.split('/');
-                    const data = await githubService.fetchRepoContent(token, owner, repo, (call.args as any).path);
-                    // Base64 디코딩 처리 (GitHub API 특성)
-                    toolResult = data.content ? Buffer.from(data.content, 'base64').toString('utf-8') : data;
+                let toolResult: any = null;
+                
+                // [보안] 인자 검증 및 Sanitization
+                if (call.name === 'list_files' || call.name === 'read_file') {
+                    let path = (call.args as any).path || '';
+                    // 경로 탐색 취약점(Path Traversal) 방지
+                    if (path.includes('..')) {
+                        toolResult = { error: 'Access denied: Path traversal attempt detected.' };
+                    } else if (selectedRepo) {
+                        const [owner, repoName] = selectedRepo.full_name.split('/');
+                        if (call.name === 'list_files') {
+                            toolResult = await githubService.fetchRepoContent(token, owner, repoName, path);
+                        } else {
+                            const data = await githubService.fetchRepoContent(token, owner, repoName, path);
+                            toolResult = data.content ? Buffer.from(data.content, 'base64').toString('utf-8') : data;
+                        }
+                    }
                 } else if (call.name === 'read_pr_diff' && selectedRepo) {
-                    const [owner, repo] = selectedRepo.full_name.split('/');
-                    toolResult = await githubService.fetchPullRequestDiff(token, owner, repo, (call.args as any).pull_number);
+                    const pullNumber = (call.args as any).pull_number;
+                    // PR 번호 유효성 검사
+                    if (typeof pullNumber !== 'number' || pullNumber <= 0) {
+                        toolResult = { error: 'Invalid PR number provided.' };
+                    } else {
+                        const [owner, repoName] = selectedRepo.full_name.split('/');
+                        toolResult = await githubService.fetchPullRequestDiff(token, owner, repoName, pullNumber);
+                    }
                 }
 
-                // 도구 실행 결과를 다시 AI에게 전달하여 최종 답변 생성
-                if (toolResult) {
-                    const modelObj = (await import('../services/geminiService')).getCurrentModel();
-                    const genAI = new (await import('@google/generative-ai')).GoogleGenerativeAI(process.env.GEMINI_API_KEY!);
-                    const activeModel = genAI.getGenerativeModel({ model: modelObj });
-                    
-                    // 대화 이력 재구성: 사용자 질문 -> AI 도구 호출 -> 시스템 도구 응답
-                    const chatHistory = [
-                        ...history,
-                        { role: 'user', parts: [{ text: message }] },
-                        { role: 'model', parts: [{ functionCall: call }] },
-                        { role: 'function', parts: [{ functionResponse: { name: call.name, response: { content: toolResult } } }] }
-                    ];
-                    
-                    const secondResult = await activeModel.generateContent({
-                        contents: chatHistory as any
-                    });
-                    
-                    const finalReply = (await secondResult.response).text();
-                    res.write(`data: ${JSON.stringify({ text: `\n\n> **AI 분석 결과:**\n\n${finalReply}` })}\n\n`);
-                }
+                // [안정성] toolResult가 없을 경우 AI에게 실패 알림
+                const finalToolResult = toolResult || { error: 'Failed to retrieve data from GitHub.' };
+
+                const modelObj = (await import('../services/geminiService')).getCurrentModel();
+                const genAI = new (await import('@google/generative-ai')).GoogleGenerativeAI(process.env.GEMINI_API_KEY!);
+                const activeModel = genAI.getGenerativeModel({ model: modelObj });
+                
+                // 대화 이력 재구성 (정확한 타입 보장)
+                const chatHistory: any[] = [
+                    ...history,
+                    { role: 'user', parts: [{ text: message }] },
+                    { role: 'model', parts: [{ functionCall: call }] },
+                    { role: 'function', parts: [{ functionResponse: { name: call.name, response: { content: finalToolResult } } }] }
+                ];
+                
+                const secondResult = await activeModel.generateContent({
+                    contents: chatHistory
+                });
+                
+                const finalReply = (await secondResult.response).text();
+                res.write(`data: ${JSON.stringify({ text: `\n\n> **AI 분석 결과:**\n\n${finalReply}` })}\n\n`);
             }
         }
 

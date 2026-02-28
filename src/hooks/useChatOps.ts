@@ -95,9 +95,9 @@ export const useChatOps = (initialModel: string = 'gemini-1.5-flash') => {
     // 세션 로드 (입력창 상태 포함)
     const loadSession = useCallback((session: ChatSession, currentInput?: string) => {
         // 현재 세션의 입력 내용을 저장하고 전환
-        if (currentSessionIdRef.current) {
+        if (currentSessionId) {
             setSessions(prev => prev.map(s => 
-                s.id === currentSessionIdRef.current ? { ...s, draftInput: currentInput } : s
+                s.id === currentSessionId ? { ...s, draftInput: currentInput } : s
             ));
         }
 
@@ -106,21 +106,20 @@ export const useChatOps = (initialModel: string = 'gemini-1.5-flash') => {
         setCurrentSessionId(session.id);
         
         return session.draftInput || '';
-    }, []);
+    }, [currentSessionId]);
 
     // 메시지 전송 (병렬 처리 지원)
     const sendMessage = async (input: string, sessionId: string | null, selectedRepo?: any) => {
         if (!input.trim()) return;
         
         let activeSessionId = sessionId;
-        // ... (생략)
         if (!activeSessionId) {
             const newId = Date.now().toString();
             activeSessionId = newId;
             const newSession: ChatSession = {
                 id: newId,
                 title: input.length > 20 ? input.substring(0, 20) + '...' : input,
-                messages: [INITIAL_MESSAGE],
+                messages: [INITIAL_MESSAGE], // sendMessage 내부에서는 초기 메시지 보장
                 model: currentModel,
                 timestamp: new Date(),
                 draftInput: '',

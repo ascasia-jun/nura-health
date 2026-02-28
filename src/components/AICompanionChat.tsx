@@ -92,7 +92,10 @@ export const AICompanionChat: React.FC = () => {
                     for (const line of lines) {
                         if (line.startsWith('data: ')) {
                             const data = line.slice(6);
-                            if (data === '[DONE]') break;
+                            if (data === '[DONE]') {
+                                reader.cancel(); // 리소스 해제
+                                return; // 전체 함수 종료 (while 루프 탈출)
+                            }
 
                             try {
                                 const parsed = JSON.parse(data);
