@@ -55,6 +55,14 @@ export const Philosophy: React.FC = () => {
             });
         });
 
+        // Subtle Grid Animation
+        gsap.to('.philo-grid', {
+            backgroundPosition: '0px 30px',
+            duration: 3,
+            repeat: -1,
+            ease: "none"
+        });
+
         return () => mm.revert();
     }, { scope: container });
 
@@ -62,44 +70,45 @@ export const Philosophy: React.FC = () => {
         <section
             id="philosophy"
             ref={container}
-            className="relative w-full min-h-screen bg-charcoal text-white flex items-center justify-center overflow-hidden py-32 px-6"
+            className="relative w-full min-h-screen bg-transparent text-white flex items-center justify-center overflow-hidden py-32 px-6"
         >
-            {/* Background Parallax Image */}
-            <div
-                className="parallax-bg absolute inset-0 z-0 opacity-20 mix-blend-screen scale-125"
-                style={{
-                    backgroundImage: 'url("https://images.unsplash.com/photo-1518531933037-91b2f5f229cc?q=80&w=1927&auto=format&fit=crop")',
-                    backgroundSize: 'cover',
-                    backgroundPosition: 'center',
-                    backgroundRepeat: 'no-repeat'
-                }}
-            />
-            <div className="absolute inset-0 z-0 bg-gradient-to-b from-charcoal via-transparent to-charcoal"></div>
+            {/* Subtle Cybernetic Grid */}
+            <div className="absolute inset-0 z-0 overflow-hidden opacity-30" style={{ perspective: '1000px' }}>
+                <div 
+                    className="philo-grid absolute -inset-[100%] w-[300%] h-[300%] bg-[linear-gradient(to_right,rgba(6,182,212,0.1)_1px,transparent_1px),linear-gradient(to_bottom,rgba(6,182,212,0.1)_1px,transparent_1px)] bg-[size:40px_40px] origin-center"
+                    style={{
+                        transform: 'rotateX(45deg) translateY(-100px)',
+                    }}
+                ></div>
+            </div>
+
+            {/* Background Gradient */}
+            <div className="absolute inset-0 z-0 bg-gradient-to-b from-slate-950 via-cyan-950/10 to-slate-950"></div>
 
             <div className="relative z-10 w-full max-w-5xl mx-auto flex flex-col justify-center items-center text-center space-y-16 perspective-1000">
                 <div className="space-y-4">
-                    <p className="philo-line font-mono text-moss text-sm tracking-widest uppercase">The Paradigm Shift</p>
-                    <div className="philo-line h-px w-24 bg-moss/50 mx-auto"></div>
+                    <p className="philo-line font-mono text-cyan-400 text-sm tracking-widest uppercase">The Paradigm Shift</p>
+                    <div className="philo-line h-px w-24 bg-cyan-500/50 mx-auto"></div>
                 </div>
 
                 <div className="space-y-6 md:space-y-8 font-serif italic text-4xl md:text-5xl lg:text-7xl font-light leading-tight">
                     <p className="philo-line text-white/50">
-                        현대 의학은 묻는다:<br />
-                        <span className="font-sans font-medium text-white/40 text-xl md:text-3xl mt-2 block not-italic tracking-tight">"무엇이 잘못되었는가?"</span>
+                        현대 개발은 묻는다:<br />
+                        <span className="font-sans font-medium text-white/40 text-xl md:text-3xl mt-2 block not-italic tracking-tight">"왜 비효율인가?"</span>
                     </p>
 
                     <div className="philo-line py-8">
-                        <div className="w-1 h-12 bg-moss/30 mx-auto rounded-full"></div>
+                        <div className="w-1 h-12 bg-cyan-500/30 mx-auto rounded-full"></div>
                     </div>
 
                     <p className="philo-line text-white">
                         우리는 묻는다:<br />
-                        <span className="font-sans font-bold text-moss text-2xl md:text-4xl mt-4 block not-italic tracking-tight">"무엇이 최적인가?"</span>
+                        <span className="font-sans font-bold text-cyan-400 text-2xl md:text-4xl mt-4 block not-italic tracking-tight">"어떻게 향상할까?"</span>
                     </p>
                 </div>
 
-                <div className="philo-line max-w-2xl mx-auto mt-16 text-clay font-outfit text-lg md:text-xl font-light">
-                    We don't just treat symptoms. We optimize the underlying biological architecture, merging elite medical protocols with continuous telemetry.
+                <div className="philo-line max-w-2xl mx-auto mt-16 text-slate-400 font-outfit text-lg md:text-xl font-light">
+                    우리는 버그를 고치지 않습니다. 우리는 개발자의 워크플로를 최적화합니다. 지속적 AI 맞춤 콘텐츠로.
                 </div>
             </div>
         </section>
