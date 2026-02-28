@@ -45,6 +45,12 @@ export const listAvailableModels = async () => {
     try {
         // HTTP 요청을 통해 가용 모델 목록을 직접 조회 (SDK 제약 회피)
         const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models?key=${process.env.GEMINI_API_KEY}`);
+        
+        if (!response.ok) {
+            const errorBody = await response.json();
+            throw new Error(`Google API Error: ${errorBody.error?.message || response.statusText}`);
+        }
+
         const data = await response.json();
         
         if (!data.models) return [];
@@ -59,7 +65,7 @@ export const listAvailableModels = async () => {
             }));
     } catch (error: any) {
         console.error('[geminiService] 모델 목록 조회 오류:', error.message);
-        return [];
+        throw error; // 프론트엔드에서 인지할 수 있도록 에러를 다시 던짐
     }
 };
 

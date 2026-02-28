@@ -75,7 +75,7 @@ export const githubService = {
         try {
             const response = await axios.get(`https://api.github.com/repos/${owner}/${repo}/contents/${path}`, {
                 headers: {
-                    Authorization: `token ${token}`,
+                    Authorization: `Bearer ${token}`, // token 대신 Bearer로 통일
                     Accept: 'application/vnd.github.v3+json',
                 },
             });
