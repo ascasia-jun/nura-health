@@ -21,7 +21,7 @@ app.use(cors({
 }));
 
 // 3. JSON 요청 본문 파싱 및 크기 제한 (DoS 방지)
-app.use(express.json({ limit: '10kb' }));
+app.use(express.json({ limit: '1mb' }));
 
 // 4. 전역 Rate Limiting: 15분 동안 IP당 100회 요청으로 제한
 const limiter = rateLimit({

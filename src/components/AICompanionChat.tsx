@@ -7,6 +7,8 @@ import { atomDark } from 'react-syntax-highlighter/dist/esm/styles/prism';
 import { useUser } from '../context/UserContext';
 import { API_ENDPOINTS } from '../config';
 
+const SyntaxHighlighterAny = SyntaxHighlighter as any;
+
 // 채팅 메시지 인터페이스
 interface Message {
     role: 'user' | 'ai';
@@ -15,7 +17,7 @@ interface Message {
 
 // AI 챗봇 컴포넌트 (Open WebUI 스타일 고도화 버전)
 export const AICompanionChat: React.FC = () => {
-    const { tier, isLoggedIn } = useUser();
+    const { tier } = useUser();
     const [isOpen, setIsOpen] = useState(false);
     const [messages, setMessages] = useState<Message[]>([
         { role: 'ai', content: '안녕하세요! Nura AI 시스템 아키텍트입니다. 프로젝트의 기술적 난제를 해결하고 최적화 프로토콜을 제안해드릴 준비가 되었습니다.' }
@@ -173,10 +175,10 @@ export const AICompanionChat: React.FC = () => {
                                 <ReactMarkdown 
                                     remarkPlugins={[remarkGfm]}
                                     components={{
-                                        code({node, inline, className, children, ...props}) {
+                                        code({className, children, ...props}) {
                                             const match = /language-(\w+)/.exec(className || '');
-                                            return !inline && match ? (
-                                                <SyntaxHighlighter
+                                            return match ? (
+                                                <SyntaxHighlighterAny
                                                     style={atomDark}
                                                     language={match[1]}
                                                     PreTag="div"
@@ -184,7 +186,7 @@ export const AICompanionChat: React.FC = () => {
                                                     {...props}
                                                 >
                                                     {String(children).replace(/\n$/, '')}
-                                                </SyntaxHighlighter>
+                                                </SyntaxHighlighterAny>
                                             ) : (
                                                 <code className="bg-black/30 px-1.5 py-0.5 rounded text-cyan-300 font-mono text-xs" {...props}>
                                                     {children}

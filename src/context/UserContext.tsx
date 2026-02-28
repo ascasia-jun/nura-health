@@ -3,8 +3,13 @@ import React, { createContext, useContext, useState, type ReactNode } from 'reac
 // 멤버십 등급 타입 정의
 export type Tier = 'Free' | 'Baseline' | 'Performance' | 'Apex';
 
+interface User {
+    username: string;
+}
+
 // UserContext의 상태 인터페이스 정의
 interface UserContextType {
+    user: User | null; // 현재 사용자 프로필
     tier: Tier; // 현재 사용자의 멤버십 등급
     setTier: (tier: Tier) => void; // 멤버십 등급을 변경하는 함수
     login: (id: string, pw: string) => boolean; // 로그인 함수
@@ -18,12 +23,14 @@ const UserContext = createContext<UserContextType | undefined>(undefined);
 // UserProvider 컴포넌트: 앱 전체에 사용자 상태를 공급합니다.
 export const UserProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
     // 초기 상태는 'Free'로 설정하여 기능 잠금 상태를 시뮬레이션합니다.
+    const [user, setUser] = useState<User | null>(null);
     const [tier, setTier] = useState<Tier>('Free');
     const [isLoggedIn, setIsLoggedIn] = useState(false);
 
     const login = (id: string, pw: string) => {
         // 간단한 하드코딩 인증 로직 (데모용)
         if (id === 'admin' && pw === 'admin') {
+            setUser({ username: 'Admin User' });
             setIsLoggedIn(true);
             setTier('Apex'); // 로그인 시 최고 등급 부여
             return true;
@@ -32,12 +39,13 @@ export const UserProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     };
 
     const logout = () => {
+        setUser(null);
         setIsLoggedIn(false);
         setTier('Free');
     };
 
     return (
-        <UserContext.Provider value={{ tier, setTier, login, logout, isLoggedIn }}>
+        <UserContext.Provider value={{ user, tier, setTier, login, logout, isLoggedIn }}>
             {children}
         </UserContext.Provider>
     );

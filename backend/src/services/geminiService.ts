@@ -113,25 +113,71 @@ export const getAiChatResponse = async (message: string): Promise<string> => {
 
 /**
  * 사용자의 채팅 메시지에 대해 스트리밍 형식으로 AI 응답을 반환합니다.
+ * MCP 도구 호출 기능을 포함합니다.
  */
-export const getAiChatStreamResponse = async (message: string, history: Content[] = []) => {
+export const getAiChatStreamResponse = async (message: string, history: Content[] = [], repoContext?: string) => {
     console.log(`[geminiService] 스트리밍 수신 (모델: ${currentModelName}): "${message}"`);
 
     if (!genAI) throw new Error('API Key missing');
 
     try {
-        const model = genAI.getGenerativeModel({ model: currentModelName });
+        // 도구 정의 (Function Declaration)
+        const tools = [
+            {
+                functionDeclarations: [
+                    {
+                        name: "list_files",
+                        description: "GitHub 저장소의 파일 및 디렉토리 목록을 가져옵니다.",
+                        parameters: {
+                            type: "object",
+                            properties: {
+                                path: { type: "string", description: "조회할 경로 (기본값: root)" }
+                            }
+                        }
+                    },
+                    {
+                        name: "read_file",
+                        description: "GitHub 저장소의 특정 파일 내용을 읽어옵니다.",
+                        parameters: {
+                            type: "object",
+                            properties: {
+                                path: { type: "string", description: "읽어올 파일의 전체 경로" }
+                            },
+                            required: ["path"]
+                        }
+                    },
+                    {
+                        name: "read_pr_diff",
+                        description: "GitHub PR의 변경 사항(Diff)을 읽어옵니다. 코드 리뷰 시 필수적으로 사용하세요.",
+                        parameters: {
+                            type: "object",
+                            properties: {
+                                pull_number: { type: "number", description: "PR 번호" }
+                            },
+                            required: ["pull_number"]
+                        }
+                    }
+                ]
+            }
+        ];
+
+        const model = genAI.getGenerativeModel({ 
+            model: currentModelName,
+            tools: tools as any,
+            systemInstruction: `당신은 Nura Health의 전문 AI 아키텍트입니다. 
+            현재 분석 대상 저장소: ${repoContext || '선택되지 않음'}.
+            당신은 list_files와 read_file 도구를 사용하여 소스 코드를 직접 분석할 수 있습니다.
+            취약점 분석, 코드 리뷰, 아키텍처 개선 제안 등을 수행할 때 반드시 실제 코드를 읽고 답변하세요.`
+        });
         
-        // Gemini 규칙: 히스토리는 반드시 'user'로 시작해야 함
         let sanitizedHistory = [...history];
         if (sanitizedHistory.length > 0 && sanitizedHistory[0].role === 'model') {
-            console.log('[geminiService] 첫 번째 메시지가 model이므로 제거하여 규칙 준수');
             sanitizedHistory.shift();
         }
 
         const chat = model.startChat({ history: sanitizedHistory });
         const result = await chat.sendMessageStream(message);
-        return result.stream;
+        return result; // stream과 function calls 처리를 위해 result 전체 반환
     } catch (error: any) {
         console.error('[geminiService] 스트리밍 오류:', error.message);
         throw error;

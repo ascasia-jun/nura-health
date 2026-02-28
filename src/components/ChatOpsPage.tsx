@@ -1,50 +1,101 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { Send, Bot, LogOut, Sparkles, Code, Terminal, MessageSquare, Plus, Settings, RotateCcw, User, ChevronDown } from 'lucide-react';
+import { Send, Bot, LogOut, Sparkles, Code, Terminal, MessageSquare, Plus, Settings, RotateCcw, User, ChevronDown, Loader2, Github, X } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter';
 import { atomDark } from 'react-syntax-highlighter/dist/esm/styles/prism';
 import { useUser } from '../context/UserContext';
-import { API_ENDPOINTS, API_URL } from '../config';
+import { API_URL } from '../config';
+import { SettingsModal } from './SettingsModal';
+import { useChatOps } from '../hooks/useChatOps';
 
-// 채팅 메시지 인터페이스
-interface Message {
-    role: 'user' | 'ai';
-    content: string;
-}
-
-interface AIModel {
-    name: string;
-    displayName: string;
-    description: string;
-}
+const SyntaxHighlighterAny = SyntaxHighlighter as any;
 
 export const ChatOpsPage: React.FC = () => {
     const { logout } = useUser();
     const [input, setInput] = useState('');
-    const [messages, setMessages] = useState<Message[]>([
-        { role: 'ai', content: '# ChatOps 시스템 활성화\n프로젝트 상태를 실시간으로 분석하고 제어할 수 있는 AI 환경에 오신 것을 환영합니다.\n\n### 가능한 작업:\n- **성능 분석**: `/analyze` 명령어로 현재 번들 사이즈 진단\n- **코드 리뷰**: 작성한 코드 조각을 붙여넣어 리뷰 요청\n- **시스템 상태**: 전체 인프라 가동률 확인' }
-    ]);
-    const [isLoading, setIsLoading] = useState(false);
-    const [models, setModels] = useState<AIModel[]>([]);
-    const [currentModel, setCurrentModel] = useState<string>('gemini-1.5-flash');
     const [isModelListOpen, setIsModelListOpen] = useState(false);
+    const [isSettingsOpen, setIsSettingsOpen] = useState(false);
+    const [isRightSidebarOpen, setIsRightSidebarOpen] = useState(true);
+    const [repositories, setRepositories] = useState<any[]>([]);
+    const [selectedRepo, setSelectedRepo] = useState<any>(null);
+    const [pullRequests, setPullRequests] = useState<any[]>([]);
+    const [isRepoLoading, setIsRepoLoading] = useState(false);
+    const [isPullsLoading, setIsPullsLoading] = useState(false);
     const messagesEndRef = useRef<HTMLDivElement>(null);
 
-    // 모델 목록 조회
+    const {
+        messages,
+        models,
+        currentModel,
+        setCurrentModel,
+        sessions,
+        currentSessionId,
+        createNewSession,
+        loadSession,
+        sendMessage,
+        setMessages
+    } = useChatOps();
+
+    // GitHub 리포지토리 목록 조회
+    // ... (fetchRepositories 함수 유지)
+
+    // Pull Request 목록 조회
+    const fetchPullRequests = async (owner: string, repo: string) => {
+        setIsPullsLoading(true);
+        try {
+            const res = await fetch(`${API_URL}/api/github/repos/${owner}/${repo}/pulls`);
+            const data = await res.json();
+            if (data.pulls) setPullRequests(data.pulls);
+        } catch (e) {
+            console.error('Failed to fetch pull requests');
+        } finally {
+            setIsPullsLoading(false);
+        }
+    };
+
+    // 저장소 선택 시 PR 목록 트리거
     useEffect(() => {
-        const fetchModels = async () => {
-            try {
-                const res = await fetch(`${API_URL}/api/models`);
-                const data = await res.json();
-                if (data.models) setModels(data.models);
-                if (data.currentModel) setCurrentModel(data.currentModel);
-            } catch (e) {
-                console.error('Failed to fetch models');
+        if (selectedRepo) {
+            const [owner, name] = selectedRepo.full_name.split('/');
+            fetchPullRequests(owner, name);
+        } else {
+            setPullRequests([]);
+        }
+    }, [selectedRepo]);
+    const fetchRepositories = async () => {
+        setIsRepoLoading(true);
+        try {
+            console.log('Fetching repos from proxy:', `${API_URL}/api/github/repos`);
+            const res = await fetch(`${API_URL}/api/github/repos`);
+            
+            const data = await res.json(); // 한 번만 호출하여 모든 정보 확보
+            
+            if (!res.ok) {
+                throw new Error(data.error || `HTTP error! status: ${res.status}`);
             }
-        };
-        fetchModels();
+
+            console.log('GitHub Repos Data:', data);
+            
+            if (data.repos && Array.isArray(data.repos)) {
+                setRepositories(data.repos);
+            } else {
+                setRepositories([]);
+            }
+        } catch (e: any) {
+            console.error('Failed to fetch repositories:', e.message);
+            // 에러 시 사용자에게 알림
+        } finally {
+            setIsRepoLoading(false);
+        }
+    };
+
+    useEffect(() => {
+        fetchRepositories();
     }, []);
+
+    // 현재 세션의 로딩 상태 확인
+    const isCurrentSessionLoading = sessions.find(s => s.id === currentSessionId)?.isLoading || false;
 
     const scrollToBottom = () => {
         messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -55,71 +106,28 @@ export const ChatOpsPage: React.FC = () => {
     }, [messages]);
 
     const handleSendMessage = async () => {
-        if (!input.trim() || isLoading) return;
-        
+        if (!input.trim() || isCurrentSessionLoading) return;
         const userMsg = input;
         setInput('');
-        setMessages(prev => [...prev, { role: 'user', content: userMsg }]);
-        setIsLoading(true);
-        setMessages(prev => [...prev, { role: 'ai', content: '' }]);
+        await sendMessage(userMsg, currentSessionId, selectedRepo);
+    };
 
-        try {
-            // Gemini 형식으로 대화 이력 변환 및 첫 번째 model 메시지 제거 (API 규칙)
-            let history = messages.map(msg => ({
-                role: msg.role === 'user' ? 'user' : 'model',
-                parts: [{ text: msg.content }]
-            }));
+    const handleAnalyzeSourceCode = async () => {
+        if (!selectedRepo || isCurrentSessionLoading) return;
+        const analyzePrompt = `저장소 \`${selectedRepo.full_name}\`의 소스 코드를 분석해줘. 취약점 분석과 코드 리뷰를 수행하고 개선점을 제안해줘.`;
+        await sendMessage(analyzePrompt, currentSessionId, selectedRepo);
+    };
 
-            // 첫 번째 메시지가 model이면 제거
-            if (history.length > 0 && history[0].role === 'model') {
-                history.shift();
-            }
+    const handlePrReview = async (pr: any) => {
+        if (!selectedRepo || isCurrentSessionLoading) return;
+        const reviewPrompt = `리포지토리 \`${selectedRepo.full_name}\`의 PR #${pr.number} ("${pr.title}")에 대한 코드 리뷰를 진행해줘. 
+        변경 사항(diff)을 읽고 버그 가능성, 보안 이슈, 성능 최적화 관점에서 상세히 분석해줘.`;
+        await sendMessage(reviewPrompt, currentSessionId, selectedRepo);
+    };
 
-            const res = await fetch(API_ENDPOINTS.CHAT_STREAM, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ message: userMsg, history }),
-            });
-
-            if (!res.ok) throw new Error('Streaming failed');
-
-            const reader = res.body?.getReader();
-            const decoder = new TextDecoder();
-            let accumulatedContent = '';
-
-            if (reader) {
-                while (true) {
-                    const { done, value } = await reader.read();
-                    if (done) break;
-
-                    const chunk = decoder.decode(value, { stream: true });
-                    const lines = chunk.split('\n');
-
-                    for (const line of lines) {
-                        if (line.startsWith('data: ')) {
-                            const data = line.slice(6);
-                            if (data === '[DONE]') break;
-
-                            try {
-                                const parsed = JSON.parse(data);
-                                if (parsed.text) {
-                                    accumulatedContent += parsed.text;
-                                    setMessages(prev => {
-                                        const last = prev[prev.length - 1];
-                                        return [...prev.slice(0, -1), { ...last, content: accumulatedContent }];
-                                    });
-                                }
-                            } catch (e) {}
-                        }
-                    }
-                }
-            }
-        } catch (error) {
-            console.error('Chat error:', error);
-            setMessages(prev => [...prev.slice(0, -1), { role: 'ai', content: '시스템 오류가 발생했습니다. 모델 설정을 확인해 보세요.' }]);
-        } finally {
-            setIsLoading(false);
-        }
+    const handleSessionClick = (session: any) => {
+        const previousInput = loadSession(session, input);
+        setInput(previousInput);
     };
 
     const handleModelChange = async (modelName: string) => {
@@ -143,9 +151,10 @@ export const ChatOpsPage: React.FC = () => {
         setMessages([{ role: 'ai', content: '세션이 초기화되었습니다. 새로운 분석을 시작하세요.' }]);
     };
 
+
     return (
         <div className="flex h-screen bg-slate-950 text-slate-200 font-sans overflow-hidden">
-            {/* Sidebar */}
+            {/* Left Sidebar: Sessions */}
             <aside className="w-72 bg-slate-900/50 border-r border-white/5 flex flex-col hidden md:flex backdrop-blur-xl">
                 <div className="p-6 flex items-center gap-3 border-b border-white/5">
                     <div className="w-8 h-8 bg-cyan-500 rounded-lg flex items-center justify-center text-slate-900 shadow-[0_0_15px_rgba(6,182,212,0.5)]">
@@ -153,6 +162,8 @@ export const ChatOpsPage: React.FC = () => {
                     </div>
                     <span className="font-bold text-lg tracking-tight text-slate-100">Nura ChatOps</span>
                 </div>
+                
+                {/* ... (기존 사이드바 내용 유지) */}
 
                 {/* Model Selector */}
                 <div className="px-4 py-4 border-b border-white/5 relative">
@@ -186,22 +197,42 @@ export const ChatOpsPage: React.FC = () => {
                 </div>
                 
                 <div className="flex-1 overflow-y-auto p-4 space-y-2 custom-scrollbar">
-                    <button onClick={resetChat} className="w-full flex items-center gap-3 px-4 py-3 bg-cyan-500/10 text-cyan-400 rounded-xl border border-cyan-500/20 hover:bg-cyan-500/20 transition-all text-sm font-medium mb-6 group">
+                    <button onClick={createNewSession} className="w-full flex items-center gap-3 px-4 py-3 bg-cyan-500/10 text-cyan-400 rounded-xl border border-cyan-500/20 hover:bg-cyan-500/20 transition-all text-sm font-medium mb-6 group">
                         <Plus size={16} className="group-hover:rotate-90 transition-transform" />
                         <span>New Analysis Session</span>
                     </button>
 
                     <div className="px-2 text-xs font-mono text-slate-500 uppercase tracking-wider mb-2">Diagnostic History</div>
-                    {['Bundle Optimization', 'Memory Usage Analysis', 'CI/CD Pipeline Fix', 'API Latency Check'].map((item, i) => (
-                        <button key={i} className="w-full flex items-center gap-3 px-4 py-2 text-slate-400 hover:text-slate-100 hover:bg-white/5 rounded-lg transition-colors text-sm text-left truncate group">
-                            <MessageSquare size={14} className="group-hover:text-cyan-400 transition-colors" />
-                            <span className="truncate">{item}</span>
-                        </button>
-                    ))}
+                    {sessions.length === 0 ? (
+                        <div className="px-4 py-8 text-center border border-white/5 rounded-xl bg-white/5">
+                            <p className="text-[10px] text-slate-600 uppercase tracking-widest leading-loose">
+                                No session history<br/>available
+                            </p>
+                        </div>
+                    ) : (
+                        sessions.map((session) => (
+                            <button 
+                                key={session.id} 
+                                onClick={() => handleSessionClick(session)}
+                                className={`w-full flex items-center justify-between gap-3 px-4 py-2 rounded-lg transition-colors text-sm text-left truncate group ${currentSessionId === session.id ? 'bg-cyan-500/10 text-cyan-400 border border-cyan-500/20' : 'text-slate-400 hover:text-slate-100 hover:bg-white/5'}`}
+                            >
+                                <div className="flex items-center gap-3 truncate">
+                                    <MessageSquare size={14} className={currentSessionId === session.id ? 'text-cyan-400' : 'group-hover:text-cyan-400 transition-colors'} />
+                                    <span className="truncate">{session.title}</span>
+                                </div>
+                                {session.isLoading && (
+                                    <Loader2 size={12} className="animate-spin text-cyan-400 shrink-0" />
+                                )}
+                            </button>
+                        ))
+                    )}
                 </div>
 
                 <div className="p-4 border-t border-white/5 space-y-2">
-                    <button className="w-full flex items-center gap-3 px-4 py-2 text-slate-400 hover:text-slate-100 hover:bg-white/5 rounded-lg transition-colors text-sm">
+                    <button 
+                        onClick={() => setIsSettingsOpen(true)}
+                        className="w-full flex items-center gap-3 px-4 py-2 text-slate-400 hover:text-slate-100 hover:bg-white/5 rounded-lg transition-colors text-sm"
+                    >
                         <Settings size={16} />
                         <span>Settings</span>
                     </button>
@@ -210,6 +241,7 @@ export const ChatOpsPage: React.FC = () => {
                         <span>Log Out</span>
                     </button>
                 </div>
+
             </aside>
 
             {/* Main Content */}
@@ -232,10 +264,10 @@ export const ChatOpsPage: React.FC = () => {
                                     <ReactMarkdown 
                                         remarkPlugins={[remarkGfm]}
                                         components={{
-                                            code({node, inline, className, children, ...props}) {
+                                            code({className, children, ...props}) {
                                                 const match = /language-(\w+)/.exec(className || '');
-                                                return !inline && match ? (
-                                                    <SyntaxHighlighter
+                                                return match ? (
+                                                    <SyntaxHighlighterAny
                                                         style={atomDark}
                                                         language={match[1]}
                                                         PreTag="div"
@@ -243,7 +275,7 @@ export const ChatOpsPage: React.FC = () => {
                                                         {...props}
                                                     >
                                                         {String(children).replace(/\n$/, '')}
-                                                    </SyntaxHighlighter>
+                                                    </SyntaxHighlighterAny>
                                                 ) : (
                                                     <code className="bg-cyan-500/20 px-1.5 py-0.5 rounded text-cyan-300 font-mono text-sm" {...props}>
                                                         {children}
@@ -277,7 +309,7 @@ export const ChatOpsPage: React.FC = () => {
                             )}
                         </div>
                     ))}
-                    {isLoading && messages[messages.length - 1].content === '' && (
+                    {isCurrentSessionLoading && (
                         <div className="flex gap-4 max-w-4xl mx-auto">
                             <div className="w-10 h-10 rounded-xl bg-cyan-500/10 text-cyan-400 flex items-center justify-center shrink-0 border border-cyan-500/20">
                                 <Sparkles size={20} />
@@ -306,19 +338,19 @@ export const ChatOpsPage: React.FC = () => {
                             }}
                             placeholder="AI에게 프로젝트 분석 명령을 입력하세요 (Shift+Enter로 줄바꿈)..."
                             className="w-full bg-slate-800/40 text-slate-100 rounded-2xl pl-6 pr-16 py-5 border border-white/10 focus:outline-none focus:border-cyan-500/40 focus:ring-1 focus:ring-cyan-500/40 transition-all placeholder:text-slate-600 shadow-2xl resize-none max-h-48 min-h-[64px] custom-scrollbar"
-                            disabled={isLoading}
+                            disabled={isCurrentSessionLoading}
                             rows={1}
                         />
                         <button 
                             onClick={handleSendMessage}
-                            disabled={!input.trim() || isLoading}
+                            disabled={!input.trim() || isCurrentSessionLoading}
                             className={`absolute right-4 bottom-4 p-3 rounded-xl transition-all shadow-lg ${
-                                !input.trim() || isLoading 
+                                !input.trim() || isCurrentSessionLoading 
                                     ? 'bg-white/5 text-white/10 cursor-not-allowed' 
                                     : 'bg-cyan-500 text-slate-900 hover:bg-cyan-400 hover:scale-105 active:scale-95 shadow-cyan-500/20'
                             }`}
                         >
-                            <Send size={22} />
+                            {isCurrentSessionLoading ? <Loader2 size={22} className="animate-spin" /> : <Send size={22} />}
                         </button>
                     </div>
                     <div className="max-w-4xl mx-auto mt-4 flex justify-between items-center px-2">
@@ -335,6 +367,171 @@ export const ChatOpsPage: React.FC = () => {
                     </div>
                 </div>
             </main>
+
+            <SettingsModal 
+                isOpen={isSettingsOpen} 
+                onClose={() => setIsSettingsOpen(false)} 
+                currentModel={currentModel}
+            />
+
+            {/* Right Sidebar: Repository Analysis */}
+            {isRightSidebarOpen && (
+                <aside className="w-80 bg-slate-900/50 border-l border-white/5 flex flex-col backdrop-blur-xl animate-in slide-in-from-right duration-300">
+                    <div className="p-6 border-b border-white/5 flex items-center justify-between">
+                        <div className="flex items-center gap-2">
+                            <Github size={18} className="text-slate-400" />
+                            <span className="font-bold text-sm tracking-tight text-slate-100">Repositories</span>
+                        </div>
+                        <div className="flex items-center gap-1">
+                            <button 
+                                onClick={() => {
+                                    console.log('Manual Fetch Triggered');
+                                    fetchRepositories();
+                                }} 
+                                className="p-1.5 hover:bg-cyan-500/10 rounded-lg text-slate-500 hover:text-cyan-400 transition-all active:scale-90"
+                                title="Force Refresh"
+                            >
+                                <RotateCcw size={14} className={isRepoLoading ? 'animate-spin' : ''} />
+                            </button>
+                        </div>
+                    </div>
+
+                    <div className="p-4 flex-1 overflow-y-auto custom-scrollbar space-y-4">
+                        <div className="relative">
+                            <input 
+                                type="text" 
+                                placeholder="Search repos..." 
+                                className="w-full bg-black/40 border border-white/10 rounded-xl px-4 py-2 text-xs text-slate-300 focus:outline-none focus:border-cyan-500/50"
+                            />
+                        </div>
+
+                        <div className="space-y-1">
+                            {isRepoLoading ? (
+                                Array(5).fill(0).map((_, i) => (
+                                    <div key={i} className="h-12 bg-white/5 animate-pulse rounded-xl mb-2"></div>
+                                ))
+                            ) : repositories.length === 0 ? (
+                                <div className="space-y-4">
+                                    <div className="text-center py-6 border border-dashed border-white/10 rounded-2xl bg-white/5">
+                                        <div className="p-2 bg-white/5 rounded-full w-fit mx-auto mb-2">
+                                            <Github size={20} className="text-slate-600" />
+                                        </div>
+                                        <p className="text-[9px] text-slate-500 uppercase tracking-widest leading-loose">
+                                            No accessible repos found.
+                                        </p>
+                                    </div>
+                                    
+                                    <div className="p-4 bg-cyan-500/5 border border-cyan-500/10 rounded-2xl">
+                                        <label className="block text-[10px] text-cyan-400/70 mb-2 uppercase font-mono">Manual Entry</label>
+                                        <div className="flex gap-2">
+                                            <input 
+                                                type="text" 
+                                                placeholder="owner/repo" 
+                                                id="manual-repo-input"
+                                                className="flex-1 bg-black/40 border border-white/10 rounded-lg px-3 py-2 text-xs text-slate-300 focus:outline-none focus:border-cyan-500/50"
+                                            />
+                                            <button 
+                                                onClick={() => {
+                                                    const val = (document.getElementById('manual-repo-input') as HTMLInputElement).value;
+                                                    if(val.includes('/')) {
+                                                        const [owner, name] = val.split('/');
+                                                        setSelectedRepo({ id: Date.now(), name, full_name: val, owner: { login: owner } });
+                                                    }
+                                                }}
+                                                className="px-3 bg-cyan-500 text-slate-900 rounded-lg text-[10px] font-bold"
+                                            >
+                                                ADD
+                                            </button>
+                                        </div>
+                                    </div>
+                                </div>
+                            ) : (
+                                repositories.map((repo) => (
+                                    <button 
+                                        key={repo.id}
+                                        onClick={() => setSelectedRepo(repo)}
+                                        className={`w-full text-left p-3 rounded-xl transition-all border ${selectedRepo?.id === repo.id ? 'bg-cyan-500/10 border-cyan-500/30 text-cyan-400 shadow-[0_0_15px_rgba(6,182,212,0.1)]' : 'bg-transparent border-transparent hover:bg-white/5 text-slate-400 hover:text-slate-200'}`}
+                                    >
+                                        <div className="flex items-center gap-3">
+                                            <div className="shrink-0 w-8 h-8 rounded-lg bg-black/40 flex items-center justify-center border border-white/5 group-hover:border-white/10">
+                                                <div className="w-2 h-2 rounded-full bg-cyan-500/50"></div>
+                                            </div>
+                                            <div className="min-w-0">
+                                                <div className="text-xs font-bold truncate">{repo.name}</div>
+                                                <div className="text-[10px] opacity-50 truncate">{repo.full_name}</div>
+                                            </div>
+                                        </div>
+                                    </button>
+                                ))
+                            )}
+                        </div>
+                    </div>
+
+                    {selectedRepo && (
+                        <div className="flex-1 border-t border-white/5 flex flex-col min-h-0 bg-black/20">
+                            <div className="p-4 flex items-center justify-between bg-white/5">
+                                <span className="text-[10px] font-mono text-slate-400 uppercase tracking-widest">Open Pull Requests</span>
+                                {isPullsLoading && <Loader2 size={12} className="animate-spin text-cyan-400" />}
+                            </div>
+                            
+                            <div className="flex-1 overflow-y-auto custom-scrollbar p-2 space-y-2">
+                                {pullRequests.length === 0 && !isPullsLoading ? (
+                                    <div className="text-center py-8 opacity-30 text-[10px] uppercase tracking-widest leading-loose">
+                                        No active PRs
+                                    </div>
+                                ) : (
+                                    pullRequests.map((pr) => (
+                                        <div key={pr.id} className="p-3 bg-white/5 border border-white/5 rounded-xl group hover:border-cyan-500/30 transition-all">
+                                            <div className="flex justify-between items-start gap-2 mb-2">
+                                                <div className="text-xs font-bold text-slate-200 line-clamp-2 leading-snug">{pr.title}</div>
+                                                <span className="text-[9px] font-mono text-cyan-400/60 shrink-0">#{pr.number}</span>
+                                            </div>
+                                            <div className="flex items-center justify-between">
+                                                <div className="flex items-center gap-1.5 opacity-50">
+                                                    <div className="w-4 h-4 rounded-full bg-slate-700 flex items-center justify-center overflow-hidden border border-white/10">
+                                                        <img src={pr.user.avatar_url} alt={pr.user.login} className="w-full h-full object-cover" />
+                                                    </div>
+                                                    <span className="text-[10px] truncate max-w-[80px]">{pr.user.login}</span>
+                                                </div>
+                                                <button 
+                                                    onClick={() => handlePrReview(pr)}
+                                                    disabled={isCurrentSessionLoading}
+                                                    className="px-3 py-1 bg-cyan-500/10 text-cyan-400 border border-cyan-500/20 rounded-lg text-[9px] font-black uppercase tracking-tighter hover:bg-cyan-500 hover:text-slate-950 transition-all disabled:opacity-30"
+                                                >
+                                                    AI Review
+                                                </button>
+                                            </div>
+                                        </div>
+                                    ))
+                                )}
+                            </div>
+                        </div>
+                    )}
+
+                    {selectedRepo && (
+                        <div className="p-4 border-t border-white/5 bg-cyan-500/5 animate-in slide-in-from-bottom-4 duration-300">
+                            <div className="flex items-center justify-between mb-4">
+                                <span className="text-[10px] font-mono text-cyan-400 uppercase tracking-widest">Active Target</span>
+                                <button onClick={() => setSelectedRepo(null)} className="text-slate-500 hover:text-white"><X size={14} /></button>
+                            </div>
+                            <div className="flex items-center gap-3 p-3 bg-black/40 rounded-xl border border-cyan-500/20 mb-4">
+                                <Code size={16} className="text-cyan-400" />
+                                <div className="min-w-0">
+                                    <div className="text-xs font-bold text-white truncate">{selectedRepo.name}</div>
+                                    <div className="text-[9px] text-cyan-400/60 font-mono uppercase tracking-tighter">Ready for AI Analysis</div>
+                                </div>
+                            </div>
+                            <button 
+                                onClick={handleAnalyzeSourceCode}
+                                disabled={isCurrentSessionLoading}
+                                className="w-full py-3 bg-cyan-500 text-slate-950 rounded-xl font-bold text-[10px] uppercase tracking-widest hover:bg-white transition-all shadow-[0_0_20px_rgba(6,182,212,0.3)] disabled:opacity-50 disabled:cursor-not-allowed"
+                            >
+                                {isCurrentSessionLoading ? 'Analyzing...' : 'Analyze Source Code'}
+                            </button>
+                        </div>
+                    )}
+                </aside>
+            )}
         </div>
     );
 };

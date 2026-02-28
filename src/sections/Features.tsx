@@ -1,12 +1,13 @@
 import React, { useRef, useEffect, useState } from 'react';
 import gsap from 'gsap';
+import { ScrollTrigger } from 'gsap/ScrollTrigger';
 import { useGSAP } from '@gsap/react';
 import { Activity, Terminal, Cpu, Lock } from 'lucide-react';
 import { cn } from '../components/Navigation';
 import { useUser } from '../context/UserContext';
 import { API_ENDPOINTS } from '../config';
 
-gsap.registerPlugin(useGSAP);
+gsap.registerPlugin(useGSAP, ScrollTrigger);
 
 // 주요 기능 섹션 컴포넌트
 export const Features: React.FC = () => {
