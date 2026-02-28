@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { Loader2, AlertCircle, CheckCircle2, Sparkles, Lock } from 'lucide-react';
 import { useUser } from '../context/UserContext';
+import { API_ENDPOINTS } from '../config';
 
 // AI 프로토콜 생성 마법사 컴포넌트
 export const ProtocolGeneratorWizard: React.FC = () => {
@@ -40,8 +41,8 @@ export const ProtocolGeneratorWizard: React.FC = () => {
         setResponse(null);
 
         try {
-            // 백엔드 API 호출 (Features.tsx와 동일한 엔드포인트 사용)
-            const res = await fetch('http://localhost:3001/api/diagnose', {
+            // 백엔드 API 호출
+            const res = await fetch(API_ENDPOINTS.DIAGNOSE, {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
@@ -56,9 +57,10 @@ export const ProtocolGeneratorWizard: React.FC = () => {
             const data = await res.json();
             // 백엔드 응답 구조에 따라 data.diagnosis 또는 data.protocol 등을 사용
             setResponse(data.diagnosis || data.protocol || "AI 응답을 확인할 수 없습니다.");
-        } catch (err: any) {
+        } catch (err: unknown) {
             console.error(err);
-            setError("AI 진단 중 오류가 발생했습니다. 잠시 후 다시 시도해주세요.");
+            const errorMessage = err instanceof Error ? err.message : "AI 진단 중 오류가 발생했습니다. 잠시 후 다시 시도해주세요.";
+            setError(errorMessage);
         } finally {
             setIsLoading(false);
         }

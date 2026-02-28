@@ -1,11 +1,13 @@
 import React, { useRef, useEffect, useState } from 'react';
 import gsap from 'gsap';
+import { ScrollTrigger } from 'gsap/ScrollTrigger';
 import { useGSAP } from '@gsap/react';
 import { Activity, Terminal, Cpu, Lock } from 'lucide-react';
 import { cn } from '../components/Navigation';
 import { useUser } from '../context/UserContext';
+import { API_ENDPOINTS } from '../config';
 
-gsap.registerPlugin(useGSAP);
+gsap.registerPlugin(useGSAP, ScrollTrigger);
 
 // 주요 기능 섹션 컴포넌트
 export const Features: React.FC = () => {
@@ -81,14 +83,15 @@ const DiagnosticShufflerCard = () => {
     useEffect(() => {
         const fetchMetrics = async () => {
             try {
-                const response = await fetch('http://localhost:3001/api/metrics');
+                const response = await fetch(API_ENDPOINTS.METRICS);
                 if (!response.ok) {
                     throw new Error(`HTTP error! status: ${response.status}`);
                 }
                 const data: Metric[] = await response.json();
                 setItems(data);
-            } catch (e: any) {
-                setError(e.message);
+            } catch (e: unknown) {
+                const errorMessage = e instanceof Error ? e.message : 'Unknown error';
+                setError(errorMessage);
                 setItems([
                     { label: "CONNECTION ERROR", val: "N/A" },
                     { label: "PLEASE REFRESH", val: "N/A" },
@@ -165,7 +168,7 @@ const TelemetryTypewriterCard = () => {
 
         const fetchData = async () => {
             try {
-                const response = await fetch('http://localhost:3001/api/diagnose', {
+                const response = await fetch(API_ENDPOINTS.DIAGNOSE, {
                     method: 'POST',
                     headers: {
                         'Content-Type': 'application/json',
@@ -179,8 +182,9 @@ const TelemetryTypewriterCard = () => {
 
                 const result = await response.json();
                 setData(result.diagnosis);
-            } catch (e: any) {
-                setError(e.message);
+            } catch (e: unknown) {
+                const errorMessage = e instanceof Error ? e.message : 'Unknown error';
+                setError(errorMessage);
             } finally {
                 setIsLoading(false);
             }
