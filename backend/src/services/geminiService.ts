@@ -19,8 +19,28 @@ const getGenAI = () => {
 
 const genAI = getGenAI();
 
-// 현재 선택된 모델 (기본값 설정)
-let currentModelName = "gemini-1.5-flash";
+// 현재 선택된 모델 (목록 조회 후 동적으로 결정됨)
+let currentModelName = "gemini-1.5-flash"; // 임시 초기값
+
+interface AIModel {
+    name: string;
+    displayName: string;
+    description: string;
+}
+
+/**
+ * 가용한 모델 목록 중 최적의 모델을 선택합니다. (2.5 -> 2.0 -> 1.5 순)
+ */
+const selectBestModel = (models: AIModel[]): string => {
+    const priorities = ["gemini-2.5-flash", "gemini-2.5-pro", "gemini-2.0-flash", "gemini-1.5-flash", "gemini-1.5-pro"];
+    
+    for (const priority of priorities) {
+        if (models.some((m: AIModel) => m.name === priority)) return priority;
+    }
+    
+    // 우선순위에 없으면 가장 첫 번째 가용 모델 반환
+    return models.length > 0 ? models[0].name : "gemini-1.5-flash";
+};
 
 /**
  * 현재 사용 중인 모델명을 반환합니다.
@@ -29,7 +49,6 @@ export const getCurrentModel = () => currentModelName;
 
 /**
  * 사용할 모델을 동적으로 변경합니다.
- * @param modelName 변경할 모델명 (예: 'gemini-2.0-flash')
  */
 export const setCurrentModel = (modelName: string) => {
     console.log(`[geminiService] 모델 변경됨: ${currentModelName} -> ${modelName}`);
@@ -37,13 +56,12 @@ export const setCurrentModel = (modelName: string) => {
 };
 
 /**
- * 현재 API 키로 사용 가능한 모델 목록을 조회합니다.
+ * 현재 API 키로 사용 가능한 모델 목록을 조회하고 최적의 모델을 기본값으로 설정합니다.
  */
 export const listAvailableModels = async () => {
-    if (!genAI) throw new Error('API Key missing');
+    if (!process.env.GEMINI_API_KEY) throw new Error('API Key missing');
     
     try {
-        // HTTP 요청을 통해 가용 모델 목록을 직접 조회 (SDK 제약 회피)
         const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models?key=${process.env.GEMINI_API_KEY}`);
         
         if (!response.ok) {
@@ -52,20 +70,29 @@ export const listAvailableModels = async () => {
         }
 
         const data = await response.json();
-        
         if (!data.models) return [];
         
-        // 생성(generateContent)을 지원하는 모델만 필터링
-        return data.models
+        const models: AIModel[] = data.models
             .filter((m: any) => m.supportedGenerationMethods.includes('generateContent'))
             .map((m: any) => ({
                 name: m.name.replace('models/', ''),
                 displayName: m.displayName,
                 description: m.description
             }));
+
+        // 최적의 모델 자동 선택 및 동기화
+        if (models.length > 0) {
+            const best = selectBestModel(models);
+            if (currentModelName === "gemini-1.5-flash" || !models.some((m: AIModel) => m.name === currentModelName)) {
+                currentModelName = best;
+                console.log(`[geminiService] 가용 모델 감지 및 자동 선택: ${currentModelName}`);
+            }
+        }
+
+        return models;
     } catch (error: any) {
         console.error('[geminiService] 모델 목록 조회 오류:', error.message);
-        throw error; // 프론트엔드에서 인지할 수 있도록 에러를 다시 던짐
+        throw error;
     }
 };
 
@@ -120,9 +147,11 @@ export const getAiChatResponse = async (message: string): Promise<string> => {
 /**
  * 사용자의 채팅 메시지에 대해 스트리밍 형식으로 AI 응답을 반환합니다.
  * MCP 도구 호출 기능을 포함합니다.
+ * @param modelNameOverride 클라이언트가 선택한 모델명 (없을 경우 기본값 사용)
  */
-export const getAiChatStreamResponse = async (message: string, history: Content[] = [], repoContext?: string) => {
-    console.log(`[geminiService] 스트리밍 수신 (모델: ${currentModelName}): "${message}"`);
+export const getAiChatStreamResponse = async (message: string, history: Content[] = [], repoContext?: string, modelNameOverride?: string) => {
+    const targetModel = modelNameOverride || currentModelName;
+    console.log(`[geminiService] 스트리밍 수신 (최종 모델: ${targetModel}): "${message}"`);
 
     if (!genAI) throw new Error('API Key missing');
 
@@ -168,7 +197,7 @@ export const getAiChatStreamResponse = async (message: string, history: Content[
         ];
 
         const model = genAI.getGenerativeModel({ 
-            model: currentModelName,
+            model: targetModel, // 선택된 모델을 적용
             tools: tools as any,
             systemInstruction: `당신은 Nura Health의 전문 AI 아키텍트입니다. 
             현재 분석 대상 저장소: ${repoContext || '선택되지 않음'}.

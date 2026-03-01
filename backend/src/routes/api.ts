@@ -181,83 +181,109 @@ router.post('/chat/stream', async (req: Request, res: Response) => {
     res.setHeader('Connection', 'keep-alive');
 
     try {
+        const token = process.env.GITHUB_TOKEN!;
         const repoContext = selectedRepo ? `Repository: ${selectedRepo.full_name}` : undefined;
         
-        let result = await getAiChatStreamResponse(message, history, repoContext);
-        let stream = result.stream;
+        let activeHistory: any[] = [...history];
+        let currentInput: any = message; // 최초는 문자열 메시지
+        let iteration = 0;
+        const MAX_ITERATIONS = 5;
 
-        // 1. 초기 스트림 처리
-        for await (const chunk of stream) {
-            const chunkText = chunk.text();
-            res.write(`data: ${JSON.stringify({ text: chunkText })}\n\n`);
-        }
+        while (iteration < MAX_ITERATIONS) {
+            iteration++;
+            qaLogger.info('agent.loop_iteration', { iteration });
 
-        // 2. 도구 호출(Function Calling) 확인 및 처리
-        const response = await result.response;
-        const calls = response.functionCalls();
+            // [안정성] 이력이 너무 커지면 가장 오래된 도구 결과부터 정리 (최근 10턴 유지)
+            if (activeHistory.length > 20) {
+                activeHistory = [activeHistory[0], ...activeHistory.slice(-15)];
+            }
 
-        if (calls && calls.length > 0) {
+            let result;
+            try {
+                // 클라이언트가 보낸 model 값을 명시적으로 전달
+                result = await getAiChatStreamResponse(currentInput, activeHistory, repoContext, model);
+            } catch (error: any) {
+                // 만약 모델이 지원되지 않아 404가 발생하면 기본 모델로 자동 폴백
+                if (error.message.includes('404') || error.message.includes('not found')) {
+                    qaLogger.warn('agent.model_fallback', { failedModel: model, fallbackModel: 'gemini-1.5-flash' });
+                    result = await getAiChatStreamResponse(currentInput, activeHistory, repoContext, 'gemini-1.5-flash');
+                } else {
+                    throw error; // 다른 에러는 위로 던짐
+                }
+            }
+            
+            let fullTextInTurn = '';
+            for await (const chunk of result.stream) {
+                const chunkText = chunk.text();
+                if (chunkText) {
+                    fullTextInTurn += chunkText;
+                    res.write(`data: ${JSON.stringify({ type: 'answer', text: chunkText })}\n\n`);
+                }
+            }
+
+            const response = await result.response;
+            const calls = response.functionCalls();
+
+            const modelParts: any[] = [];
+            if (fullTextInTurn) modelParts.push({ text: fullTextInTurn });
+            if (calls && calls.length > 0) {
+                calls.forEach(call => modelParts.push({ functionCall: call }));
+            }
+
+            activeHistory.push({ role: 'user', parts: typeof currentInput === 'string' ? [{ text: currentInput }] : currentInput });
+            activeHistory.push({ role: 'model', parts: modelParts });
+
+            if (!calls || calls.length === 0) break;
+
+            const functionResponses: any[] = [];
             for (const call of calls) {
-                qaLogger.info('mcp.tool_called', { tool: call.name, args: call.args });
+                res.write(`data: ${JSON.stringify({ type: 'thought', content: `Executing ${call.name}...` })}\n\n`);
                 
-                let toolResult: any = null;
-                
-                // [보안] 인자 검증 및 Sanitization
-                if (call.name === 'list_files' || call.name === 'read_file') {
-                    let path = (call.args as any).path || '';
-                    // 경로 탐색 취약점(Path Traversal) 방지
-                    if (path.includes('..')) {
-                        toolResult = { error: 'Access denied: Path traversal attempt detected.' };
-                    } else if (selectedRepo) {
-                        const [owner, repoName] = selectedRepo.full_name.split('/');
-                        if (call.name === 'list_files') {
-                            toolResult = await githubService.fetchRepoContent(token, owner, repoName, path);
-                        } else {
-                            const data = await githubService.fetchRepoContent(token, owner, repoName, path);
-                            toolResult = data.content ? Buffer.from(data.content, 'base64').toString('utf-8') : data;
+                let toolResult: any;
+                try {
+                    if (call.name === 'list_files' && selectedRepo) {
+                        const [owner, repo] = selectedRepo.full_name.split('/');
+                        toolResult = await githubService.fetchRepoContent(token, owner, repo, (call.args as any).path || '');
+                    } else if (call.name === 'read_file' && selectedRepo) {
+                        const [owner, repo] = selectedRepo.full_name.split('/');
+                        const data = await githubService.fetchRepoContent(token, owner, repo, (call.args as any).path);
+                        let content = data.content ? Buffer.from(data.content, 'base64').toString('utf-8') : JSON.stringify(data);
+                        
+                        // [최적화] 파일 내용이 너무 길면 절단하여 컨텍스트 보호 (최대 10,000자)
+                        if (content.length > 10000) {
+                            content = content.substring(0, 10000) + "\n\n... (Content truncated due to size limits) ...";
                         }
+                        toolResult = content;
+                    } else if (call.name === 'read_pr_diff' && selectedRepo) {
+                        const [owner, repo] = selectedRepo.full_name.split('/');
+                        let diff = await githubService.fetchPullRequestDiff(token, owner, repo, (call.args as any).pull_number);
+                        if (diff.length > 10000) {
+                            diff = diff.substring(0, 10000) + "\n\n... (Diff truncated) ...";
+                        }
+                        toolResult = diff;
                     }
-                } else if (call.name === 'read_pr_diff' && selectedRepo) {
-                    const pullNumber = (call.args as any).pull_number;
-                    // PR 번호 유효성 검사
-                    if (typeof pullNumber !== 'number' || pullNumber <= 0) {
-                        toolResult = { error: 'Invalid PR number provided.' };
-                    } else {
-                        const [owner, repoName] = selectedRepo.full_name.split('/');
-                        toolResult = await githubService.fetchPullRequestDiff(token, owner, repoName, pullNumber);
-                    }
+                } catch (e: any) {
+                    qaLogger.error('mcp.tool_error', { tool: call.name, error: e.message });
+                    toolResult = { error: `Failed to execute tool: ${e.message}` };
                 }
 
-                // [안정성] toolResult가 없을 경우 AI에게 실패 알림
-                const finalToolResult = toolResult || { error: 'Failed to retrieve data from GitHub.' };
-
-                const modelObj = (await import('../services/geminiService')).getCurrentModel();
-                const genAI = new (await import('@google/generative-ai')).GoogleGenerativeAI(process.env.GEMINI_API_KEY!);
-                const activeModel = genAI.getGenerativeModel({ model: modelObj });
-                
-                // 대화 이력 재구성 (정확한 타입 보장)
-                const chatHistory: any[] = [
-                    ...history,
-                    { role: 'user', parts: [{ text: message }] },
-                    { role: 'model', parts: [{ functionCall: call }] },
-                    { role: 'function', parts: [{ functionResponse: { name: call.name, response: { content: finalToolResult } } }] }
-                ];
-                
-                const secondResult = await activeModel.generateContent({
-                    contents: chatHistory
+                functionResponses.push({
+                    functionResponse: {
+                        name: call.name,
+                        response: { content: toolResult || "No data returned" }
+                    }
                 });
-                
-                const finalReply = (await secondResult.response).text();
-                res.write(`data: ${JSON.stringify({ text: `\n\n> **AI 분석 결과:**\n\n${finalReply}` })}\n\n`);
             }
+
+            activeHistory.push({ role: 'function', parts: functionResponses });
+            currentInput = "Review the results and provide the next analysis or final summary.";
         }
 
-        // 스트림 종료 알림
-        res.write('data: [DONE]\n\n');
+        res.write(`data: ${JSON.stringify({ done: true })}\n\n`);
         res.end();
     } catch (error: any) {
-        console.error('Streaming error:', error);
-        res.write(`data: ${JSON.stringify({ error: error.message || 'Streaming failed' })}\n\n`);
+        qaLogger.error('agent.fatal_error', { message: error.message, stack: error.stack });
+        res.write(`data: ${JSON.stringify({ error: '시스템 용량 또는 정책 제한으로 인해 응답이 중단되었습니다. 대화 내용을 간결하게 유지해 주세요.' })}\n\n`);
         res.end();
     }
 });

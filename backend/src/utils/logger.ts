@@ -11,6 +11,15 @@ export const qaLogger = {
             ...data
         }));
     },
+    warn: (event: string, data: any) => {
+        console.warn(JSON.stringify({
+            level: 'warn',
+            timestamp: new Date().toISOString(),
+            qa: true,
+            event,
+            ...data
+        }));
+    },
     error: (event: string, error: any) => {
         console.error(JSON.stringify({
             level: 'error',

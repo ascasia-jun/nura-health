@@ -43,6 +43,7 @@ const INITIAL_MESSAGE: Message = {
 };
 
 export const useChatOps = (initialModel: string = 'gemini-1.5-flash') => {
+
     const [messages, setMessages] = useState<Message[]>([INITIAL_MESSAGE]);
     const [models, setModels] = useState<AIModel[]>([]);
     const [currentModel, setCurrentModel] = useState<string>(initialModel);
@@ -55,16 +56,24 @@ export const useChatOps = (initialModel: string = 'gemini-1.5-flash') => {
         currentSessionIdRef.current = currentSessionId;
     }, [currentSessionId]);
 
-    // 모델 목록 조회
+    // 모델 목록 조회 및 초기 설정
     useEffect(() => {
         const loadModels = async () => {
             try {
                 const data = await chatService.fetchModels();
                 if (data.models && data.models.length > 0) {
                     setModels(data.models);
-                    const modelExists = data.models.some((m: AIModel) => m.name === currentModel);
-                    if (!modelExists) {
-                        setCurrentModel(data.models[0].name);
+
+                    // 1. 백엔드에서 명시적으로 현재 모델(currentModel)을 알려주면 그것을 우선 사용
+                    // 2. 아니면 기존 currentModel이 목록에 있는지 확인
+                    // 3. 둘 다 아니면 목록의 첫 번째 모델을 선택
+                    if (data.currentModel) {
+                        setCurrentModel(data.currentModel);
+                    } else {
+                        const modelExists = data.models.some((m: AIModel) => m.name === currentModel);
+                        if (!modelExists) {
+                            setCurrentModel(data.models[0].name);
+                        }
                     }
                 }
             } catch (e) {
@@ -72,7 +81,8 @@ export const useChatOps = (initialModel: string = 'gemini-1.5-flash') => {
             }
         };
         loadModels();
-    }, [currentModel]);
+    }, []); // 초기 1회만 실행하여 동기화
+
 
     // 새로운 세션 생성
     const createNewSession = useCallback(() => {
@@ -109,7 +119,7 @@ export const useChatOps = (initialModel: string = 'gemini-1.5-flash') => {
     }, [currentSessionId]);
 
     // 메시지 전송 (병렬 처리 지원)
-    const sendMessage = async (input: string, sessionId: string | null, selectedRepo?: any) => {
+    const sendMessage = async (input: string, sessionId: string | null, selectedRepo?: any, onThinking?: (status: string | null) => void) => {
         if (!input.trim()) return;
         
         let activeSessionId = sessionId;
@@ -188,11 +198,19 @@ export const useChatOps = (initialModel: string = 'gemini-1.5-flash') => {
                     for (const line of lines) {
                         if (line.startsWith('data: ')) {
                             const data = line.slice(6);
-                            if (data === '[DONE]') break;
+                            if (data === '[DONE]') break; // 레거시 지원
 
                             try {
                                 const parsed = JSON.parse(data);
-                                if (parsed.text) {
+                                
+                                // 1. 전체 루프 종료 감지
+                                if (parsed.done) {
+                                    break;
+                                }
+
+                                // 2. AI의 답변 조각 처리
+                                if (parsed.type === 'answer' && parsed.text) {
+                                    if (onThinking) onThinking(null); // 답변 시작 시 생각 중 상태 해제
                                     accumulatedContent += parsed.text;
                                     const updatedMessages: Message[] = [...newMessages, { role: 'ai' as const, content: accumulatedContent }];
 
@@ -210,6 +228,12 @@ export const useChatOps = (initialModel: string = 'gemini-1.5-flash') => {
                                             : s
                                     ));
                                 }
+
+                                // 3. AI의 생각 과정(도구 호출 중) 처리
+                                if (parsed.type === 'thought' && parsed.content) {
+                                    if (onThinking) onThinking(parsed.content);
+                                    console.log(`Agent Thinking: ${parsed.content}`);
+                                }
                             } catch (e) {}
                         }
                     }
@@ -221,6 +245,7 @@ export const useChatOps = (initialModel: string = 'gemini-1.5-flash') => {
                 setMessages(prev => [...prev, { role: 'ai', content: '시스템 오류가 발생했습니다.' }]);
             }
         } finally {
+            if (onThinking) onThinking(null);
             // 해당 세션의 로딩 상태 해제
             setSessions(prev => prev.map(s => s.id === activeSessionId ? { ...s, isLoading: false } : s));
         }

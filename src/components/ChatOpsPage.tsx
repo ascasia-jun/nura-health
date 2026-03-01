@@ -22,6 +22,7 @@ export const ChatOpsPage: React.FC = () => {
     const [pullRequests, setPullRequests] = useState<any[]>([]);
     const [isRepoLoading, setIsRepoLoading] = useState(false);
     const [isPullsLoading, setIsPullsLoading] = useState(false);
+    const [thinkingStatus, setThinkingStatus] = useState<string | null>(null);
     const messagesEndRef = useRef<HTMLDivElement>(null);
 
     const {
@@ -109,20 +110,20 @@ export const ChatOpsPage: React.FC = () => {
         if (!input.trim() || isCurrentSessionLoading) return;
         const userMsg = input;
         setInput('');
-        await sendMessage(userMsg, currentSessionId, selectedRepo);
+        await sendMessage(userMsg, currentSessionId, selectedRepo, setThinkingStatus);
     };
 
     const handleAnalyzeSourceCode = async () => {
         if (!selectedRepo || isCurrentSessionLoading) return;
         const analyzePrompt = `저장소 \`${selectedRepo.full_name}\`의 소스 코드를 분석해줘. 취약점 분석과 코드 리뷰를 수행하고 개선점을 제안해줘.`;
-        await sendMessage(analyzePrompt, currentSessionId, selectedRepo);
+        await sendMessage(analyzePrompt, currentSessionId, selectedRepo, setThinkingStatus);
     };
 
     const handlePrReview = async (pr: any) => {
         if (!selectedRepo || isCurrentSessionLoading) return;
         const reviewPrompt = `리포지토리 \`${selectedRepo.full_name}\`의 PR #${pr.number} ("${pr.title}")에 대한 코드 리뷰를 진행해줘. 
         변경 사항(diff)을 읽고 버그 가능성, 보안 이슈, 성능 최적화 관점에서 상세히 분석해줘.`;
-        await sendMessage(reviewPrompt, currentSessionId, selectedRepo);
+        await sendMessage(reviewPrompt, currentSessionId, selectedRepo, setThinkingStatus);
     };
 
     const handleSessionClick = (session: any) => {
@@ -309,7 +310,20 @@ export const ChatOpsPage: React.FC = () => {
                             )}
                         </div>
                     ))}
-                    {isCurrentSessionLoading && (
+
+                    {thinkingStatus && (
+                        <div className="flex gap-4 max-w-4xl mx-auto animate-pulse">
+                            <div className="w-10 h-10 rounded-xl bg-amber-500/10 text-amber-400 flex items-center justify-center shrink-0 border border-amber-500/20">
+                                <Bot size={20} />
+                            </div>
+                            <div className="bg-slate-900/40 border border-white/10 rounded-2xl p-6 flex items-center gap-3">
+                                <Loader2 size={16} className="animate-spin text-amber-400" />
+                                <span className="text-xs font-mono text-amber-200/70 uppercase tracking-wider">{thinkingStatus}</span>
+                            </div>
+                        </div>
+                    )}
+
+                    {isCurrentSessionLoading && !thinkingStatus && (
                         <div className="flex gap-4 max-w-4xl mx-auto">
                             <div className="w-10 h-10 rounded-xl bg-cyan-500/10 text-cyan-400 flex items-center justify-center shrink-0 border border-cyan-500/20">
                                 <Sparkles size={20} />
