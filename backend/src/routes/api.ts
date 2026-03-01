@@ -1,4 +1,6 @@
 import { Router, Request, Response } from 'express';
+import fs from 'fs/promises';
+import path from 'path';
 import { 
     getAiDiagnosis, 
     getAiChatResponse, 
@@ -12,7 +14,61 @@ import { githubService } from '../services/githubService';
 
 const router = Router();
 
-// --- API 엔드포인트 생략 (기존 유지) ---
+// --- Skills & Context Hook API ---
+
+/**
+ * GET /api/skills
+ * 사용 가능한 분석 스킬 목록을 반환합니다.
+ */
+router.get('/skills', async (req: Request, res: Response) => {
+    try {
+        const skillsDir = path.join(__dirname, '../skills');
+        // 디렉토리가 없으면 생성
+        await fs.mkdir(skillsDir, { recursive: true });
+        
+        const files = await fs.readdir(skillsDir);
+        const skills = files
+            .filter(f => f.endsWith('.md'))
+            .map(f => ({ 
+                id: f.replace('.md', ''), 
+                name: f.replace('.md', '').replace(/-/g, ' ').toUpperCase() 
+            }));
+            
+        qaLogger.info('skills.list_fetched', { count: skills.length });
+        res.json({ skills });
+    } catch (e) { 
+        qaLogger.error('skills.fetch_failed', e);
+        res.status(500).json({ error: 'Failed to load skills' }); 
+    }
+});
+
+/**
+ * GET /api/context/hook
+ * 서버의 특정 MD 파일 내용을 읽어옵니다.
+ */
+router.get('/context/hook', async (req: Request, res: Response) => {
+    const { fileName } = req.query;
+    if (!fileName) return res.status(400).json({ error: 'fileName is required' });
+
+    try {
+        // 보안: 허용된 파일 목록만 읽기 가능
+        const allowedFiles = ['GEMINI.md', 'plan.md', 'README.md', 'checklist.md', 'context_notes.md'];
+        if (!allowedFiles.includes(fileName as string)) {
+            return res.status(403).json({ error: 'Access denied to requested file' });
+        }
+
+        // nura-health 루트 디렉토리 기준으로 파일 찾기
+        const filePath = path.join(process.cwd(), '..', fileName as string);
+        const content = await fs.readFile(filePath, 'utf-8');
+        
+        res.json({ fileName, content });
+    } catch (e) { 
+        qaLogger.error('context.hook_failed', { fileName, error: e });
+        res.status(500).json({ error: 'Failed to read file' }); 
+    }
+});
+
+// --- GitHub API ---
 router.get('/github/repos', async (req: Request, res: Response) => {
     const token = process.env.GITHUB_TOKEN;
     if (!token) return res.status(500).json({ error: 'GitHub token missing' });
@@ -32,6 +88,7 @@ router.get('/github/repos/:owner/:repo/pulls', async (req: Request, res: Respons
     } catch (error: any) { res.status(500).json({ error: 'Failed to fetch pull requests' }); }
 });
 
+// --- 모델 관리 ---
 router.get('/models', async (req: Request, res: Response) => {
     try {
         const models = await listAvailableModels();
@@ -48,11 +105,10 @@ router.post('/models/select', (req: Request, res: Response) => {
 });
 
 /**
- * POST /api/chat/stream
- * 최적화된 AI 에이전트 루프
+ * POST /api/chat/stream (v3 확장 버전)
  */
 router.post('/chat/stream', async (req: Request, res: Response) => {
-    const { message, history, model, selectedRepo } = req.body;
+    const { message, history, model, selectedRepo, activeSkillId } = req.body;
     if (!message) return res.status(400).json({ error: 'message is required' });
 
     const token = process.env.GITHUB_TOKEN;
@@ -64,18 +120,30 @@ router.post('/chat/stream', async (req: Request, res: Response) => {
 
     try {
         const repoContext = selectedRepo ? `Repository: ${selectedRepo.full_name}` : undefined;
-        
-        // 1. 이력 초기화 (프론트엔드에서 넘어온 history에 이번 질문 추가)
         let activeHistory: any[] = [...history];
         let currentPrompt: string = message; 
+        
+        // --- [Skills Injection] ---
+        if (activeSkillId) {
+            try {
+                const skillPath = path.join(__dirname, '../skills', `${activeSkillId}.md`);
+                const skillContent = await fs.readFile(skillPath, 'utf-8');
+                // 시스템 지시문으로 스킬 내용 주입
+                currentPrompt = `[SYSTEM: ACTIVATED SKILL - ${activeSkillId}]\n${skillContent}\n\n[USER MESSAGE]\n${message}`;
+                qaLogger.info('skill.injected', { activeSkillId });
+            } catch (e) { 
+                qaLogger.warn('skill.load_failed', { activeSkillId }); 
+            }
+        }
+
         let iteration = 0;
-        const MAX_ITERATIONS = 8; // 분석 정확도를 위해 약간 상향 조정
+        const MAX_ITERATIONS = 30; // 서비스 확장에 맞춰 상향
+        const lastCallTracker = new Set<string>(); // 루프 무한 반복 방지용
 
         while (iteration < MAX_ITERATIONS) {
             iteration++;
             qaLogger.info('agent.loop_iteration', { iteration });
 
-            // API 호출
             const result = await getAiChatStreamResponse(currentPrompt, activeHistory, repoContext, model);
 
             let fullTextInTurn = '';
@@ -90,10 +158,9 @@ router.post('/chat/stream', async (req: Request, res: Response) => {
             const response = await result.response;
             const calls = response.functionCalls();
 
-            // [핵심] 이번 턴의 상호작용을 이력에 순서대로 기록
-            // iteration 1에서만 user 메시지를 넣고, 이후는 function 결과가 user 역할을 대신함
+            // 이력 기록 로직
             if (iteration === 1) {
-                activeHistory.push({ role: 'user', parts: [{ text: message }] });
+                activeHistory.push({ role: 'user', parts: [{ text: currentPrompt }] });
             }
             
             const modelParts: any[] = [];
@@ -101,16 +168,21 @@ router.post('/chat/stream', async (req: Request, res: Response) => {
             if (calls && calls.length > 0) {
                 calls.forEach(call => modelParts.push({ functionCall: call }));
             }
-            
-            // 모델의 응답(텍스트 또는 도구 호출)을 이력에 추가
             if (modelParts.length > 0) {
                 activeHistory.push({ role: 'model', parts: modelParts });
             }
 
-            // 도구 호출이 없으면 에이전트 작업 완료
             if (!calls || calls.length === 0) break;
 
-            // 2. 도구 실행 섹션
+            // [Loop Protection]
+            const callFingerprint = JSON.stringify(calls);
+            if (lastCallTracker.has(callFingerprint)) {
+                res.write(`data: ${JSON.stringify({ type: 'thought', content: 'Detected repeated actions. Terminating loop for stability.' })}\n\n`);
+                break;
+            }
+            lastCallTracker.add(callFingerprint);
+
+            // 도구 실행
             const functionResponses: any[] = [];
             for (const call of calls) {
                 let statusMsg = `Executing ${call.name}...`;
@@ -126,24 +198,17 @@ router.post('/chat/stream', async (req: Request, res: Response) => {
                         const [owner, repo] = selectedRepo.full_name.split('/');
                         const data = await githubService.fetchRepoContent(token, owner, repo, (call.args as any).path);
                         toolResult = data.content ? Buffer.from(data.content, 'base64').toString('utf-8') : JSON.stringify(data);
-                        // 토큰 절약을 위해 결과 최적화
-                        if (toolResult.length > 8000) toolResult = toolResult.substring(0, 8000) + "...(content truncated)";
+                        if (toolResult.length > 8000) toolResult = toolResult.substring(0, 8000) + "...(truncated)";
                     }
                     res.write(`data: ${JSON.stringify({ type: 'thought', content: `Completed: ${call.name}` })}\n\n`);
                 } catch (e: any) {
                     toolResult = { error: e.message };
                     res.write(`data: ${JSON.stringify({ type: 'thought', content: `Failed: ${call.name}` })}\n\n`);
                 }
-
-                functionResponses.push({
-                    functionResponse: { name: call.name, response: { content: toolResult } }
-                });
+                functionResponses.push({ functionResponse: { name: call.name, response: { content: toolResult } } });
             }
 
-            // 3. 도구 실행 결과를 이력에 추가 (role: 'function'은 다음 루프에서 모델의 판단 근거가 됨)
             activeHistory.push({ role: 'function', parts: functionResponses });
-            
-            // 다음 루프를 위해 prompt를 비움 (이미 history에 정보가 충분함)
             currentPrompt = ""; 
         }
 
@@ -151,7 +216,7 @@ router.post('/chat/stream', async (req: Request, res: Response) => {
         res.end();
     } catch (error: any) {
         qaLogger.error('agent.fatal_error', { message: error.message });
-        res.write(`data: ${JSON.stringify({ error: '분석 중 오류가 발생했습니다. 잠시 후 다시 시도해 주세요.' })}\n\n`);
+        res.write(`data: ${JSON.stringify({ error: '시스템 분석 중 오류가 발생했습니다.' })}\n\n`);
         res.end();
     }
 });
