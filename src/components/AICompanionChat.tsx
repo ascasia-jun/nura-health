@@ -1,28 +1,18 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { MessageSquare, Send, Minimize2, Bot, User, Lock, RotateCcw, Loader2, X } from 'lucide-react';
-import ReactMarkdown from 'react-markdown';
-import remarkGfm from 'remark-gfm';
-import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter';
-import { atomDark } from 'react-syntax-highlighter/dist/esm/styles/prism';
+import { MessageSquare, Send, Minimize2, Bot, User, Lock, RotateCcw, Loader2 } from 'lucide-react';
 import { useUser } from '../context/UserContext';
 import { API_ENDPOINTS } from '../config';
+import { CHAT_MODULE_LOADED } from '../types/chat';
+import type { ChatPart, Message } from '../types/chat';
+import { MarkdownRenderer } from './Chat/MarkdownRenderer';
 
-const SyntaxHighlighterAny = SyntaxHighlighter as any;
+// 모듈 로드 보장
+if (!CHAT_MODULE_LOADED) console.warn('Chat types module not loaded properly');
+import { ProcessNode } from './Chat/ProcessNode';
 
-// 채팅 파트 및 메시지 인터페이스 (ChatOpsPage와 동일 규격)
-interface ChatPart {
-    type: 'text' | 'thought' | 'tool_result';
-    content: string;
-}
-
-interface Message {
-    id: string;
-    role: 'user' | 'assistant';
-    parts: ChatPart[];
-    timestamp: Date;
-}
-
-// AI 챗봇 컴포넌트 (지능형 UI 업그레이드 버전)
+/**
+ * 랜딩 페이지에서 제공되는 소형 AI 어시스턴트 위젯입니다.
+ */
 export const AICompanionChat: React.FC = () => {
     const { tier } = useUser();
     const [isOpen, setIsOpen] = useState(false);
@@ -37,8 +27,9 @@ export const AICompanionChat: React.FC = () => {
     const [inputValue, setInputValue] = useState('');
     const [isLoading, setIsLoading] = useState(false);
     const messagesEndRef = useRef<HTMLDivElement>(null);
+    const isProcessingRef = useRef<boolean>(false);
 
-    // Apex 등급이 아니면 기능 잠금
+    // Apex 등급 사용자만 사용 가능
     const isLocked = tier !== 'Apex';
 
     const scrollToBottom = () => {
@@ -49,7 +40,7 @@ export const AICompanionChat: React.FC = () => {
         scrollToBottom();
     }, [messages, isOpen]);
 
-    // 대화 내역 초기화
+    /** 대화 내역을 초기화합니다. */
     const resetChat = () => {
         setMessages([{ 
             id: 'reset',
@@ -59,37 +50,39 @@ export const AICompanionChat: React.FC = () => {
         }]);
     };
 
-    // 스트리밍 메시지 전송 핸들러
+    /** AI에게 메시지를 전송하고 스트리밍 응답을 수신합니다. */
     const handleSendMessage = async () => {
-        if (!inputValue.trim() || isLoading) return;
-
-        const userMsgText = inputValue.trim();
-        setInputValue('');
-        
-        const userMsg: Message = {
-            id: Date.now().toString(),
-            role: 'user',
-            parts: [{ type: 'text', content: userMsgText }],
-            timestamp: new Date()
-        };
-
-        const aiMsg: Message = {
-            id: (Date.now() + 1).toString(),
-            role: 'assistant',
-            parts: [],
-            timestamp: new Date()
-        };
-
-        setMessages(prev => [...prev, userMsg, aiMsg]);
-        setIsLoading(true);
+        const trimmed = inputValue.trim();
+        if (!trimmed || isLoading || isProcessingRef.current) return;
 
         try {
+            isProcessingRef.current = true;
+            setInputValue('');
+            
+            const userMsg: Message = {
+                id: Date.now().toString(),
+                role: 'user',
+                parts: [{ type: 'text', content: trimmed }],
+                timestamp: new Date()
+            };
+
+            const aiMsg: Message = {
+                id: (Date.now() + 1).toString(),
+                role: 'assistant',
+                parts: [],
+                timestamp: new Date()
+            };
+
+            setMessages(prev => [...prev, userMsg, aiMsg]);
+            setIsLoading(true);
+
+            // 히스토리 구성 (최근 10턴, parts 널 체크 강화)
             let history = messages
-                .filter(m => m.parts.length > 0)
+                .filter(m => (m.parts || []).length > 0)
                 .slice(-10)
                 .map(msg => ({
                     role: msg.role === 'user' ? 'user' : 'model',
-                    parts: msg.parts.filter(p => p.type === 'text').map(p => ({ text: p.content }))
+                    parts: (msg.parts || []).filter(p => p.type === 'text').map(p => ({ text: p.content }))
                 }));
 
             if (history.length > 0 && history[0].role === 'model') history.shift();
@@ -97,82 +90,76 @@ export const AICompanionChat: React.FC = () => {
             const response = await fetch(API_ENDPOINTS.CHAT_STREAM, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ message: userMsgText, history }),
+                body: JSON.stringify({ message: trimmed, history }),
             });
 
             if (!response.ok) throw new Error('스트리밍 요청 실패');
 
             const reader = response.body?.getReader();
             const decoder = new TextDecoder();
+            let lineBuffer = '';
 
             if (reader) {
                 while (true) {
                     const { done, value } = await reader.read();
                     if (done) break;
 
-                    const chunk = decoder.decode(value, { stream: true });
-                    const lines = chunk.split('\n');
+                    lineBuffer += decoder.decode(value, { stream: true });
+                    const lines = lineBuffer.split('\n');
+                    lineBuffer = lines.pop() || '';
 
                     for (const line of lines) {
-                        if (line.startsWith('data: ')) {
-                            const data = line.slice(6);
-                            if (data === '[DONE]') break;
+                        const trimmedLine = line.trim();
+                        if (!trimmedLine || !trimmedLine.startsWith('data: ')) continue;
+                        const rawData = trimmedLine.slice(6);
+                        if (rawData === '[DONE]') break;
 
-                            try {
-                                const parsed = JSON.parse(data);
-                                if (parsed.done) break;
+                        try {
+                            const parsed = JSON.parse(rawData);
+                            if (parsed.done) break;
 
-                                if (parsed.type === 'answer' || parsed.type === 'thought') {
-                                    const type = parsed.type === 'answer' ? 'text' : 'thought';
-                                    const content = parsed.type === 'answer' ? parsed.text : parsed.content;
+                            const type = parsed.type === 'answer' ? 'text' : 'thought';
+                            const content = parsed.type === 'answer' ? parsed.text : parsed.content;
 
-                                    setMessages(prev => {
-                                        const next = [...prev];
-                                        const last = next[next.length - 1];
-                                        if (last && last.role === 'assistant') {
-                                            if (type === 'text') {
-                                                const lastPart = last.parts[last.parts.length - 1];
-                                                if (lastPart && lastPart.type === 'text') {
-                                                    lastPart.content += content;
-                                                } else {
-                                                    last.parts.push({ type: 'text', content });
-                                                }
-                                            } else {
-                                                // [지능형 갱신] 역순 탐색하여 완료되지 않은 가장 최근의 thought 파트 찾기
-                                                const targetPart = [...last.parts].reverse().find(p => 
-                                                    p.type === 'thought' && 
-                                                    !p.content.startsWith('Completed:') && 
-                                                    !p.content.startsWith('Failed:')
-                                                );
-
-                                                if (targetPart && (content.startsWith('Completed:') || content.startsWith('Failed:') || content.includes('Analyzing'))) {
-                                                    targetPart.content = content;
-                                                } else {
-                                                    last.parts.push({ type: 'thought', content });
-                                                }
-                                            }
+                            setMessages(prev => {
+                                const next = [...prev];
+                                const last = next[next.length - 1];
+                                if (last && last.role === 'assistant') {
+                                    if (!last.parts) last.parts = [];
+                                    if (type === 'text') {
+                                        const lastPart = last.parts[last.parts.length - 1];
+                                        if (lastPart && lastPart.type === 'text') {
+                                            if (!lastPart.content.endsWith(content)) lastPart.content += content;
+                                        } else {
+                                            last.parts.push({ type: 'text', content });
                                         }
-                                        return next;
-                                    });
+                                    } else {
+                                        const targetPart = [...last.parts].reverse().find(p => 
+                                            p.type === 'thought' && !p.content.startsWith('Completed:') && !p.content.startsWith('Failed:')
+                                        );
+                                        if (targetPart && (content.startsWith('Completed:') || content.startsWith('Failed:') || content.includes('Analyzing'))) {
+                                            targetPart.content = content;
+                                        } else {
+                                            last.parts.push({ type: 'thought', content });
+                                        }
+                                    }
                                 }
-                            } catch (e) {}
-                        }
+                                return next;
+                            });
+                        } catch (e) {}
                     }
                 }
             }
         } catch (error) {
-            console.error('Streaming error:', error);
-            setMessages(prev => {
-                const next = [...prev];
-                next[next.length - 1].parts.push({ type: 'text', content: '죄송합니다. 메시지 수신 중 오류가 발생했습니다.' });
-                return next;
-            });
+            console.error('[AICompanionChat] 오류:', error);
         } finally {
+            isProcessingRef.current = false;
             setIsLoading(false);
         }
     };
 
     const handleKeyDown = (e: React.KeyboardEvent) => {
+        if (e.nativeEvent.isComposing) return;
         if (e.key === 'Enter' && !e.shiftKey) {
             e.preventDefault();
             handleSendMessage();
@@ -193,12 +180,12 @@ export const AICompanionChat: React.FC = () => {
 
     return (
         <div className="fixed bottom-8 right-8 z-50 w-[380px] md:w-[450px] h-[600px] bg-slate-900/95 backdrop-blur-2xl border border-cyan-500/30 rounded-2xl shadow-2xl flex flex-col overflow-hidden animate-in slide-in-from-bottom-10 fade-in duration-300 font-sans">
-            {/* Header */}
+            {/* 헤더 */}
             <div className="bg-white/5 p-4 flex items-center justify-between border-b border-white/5">
                 <div className="flex items-center gap-2 text-slate-100 font-sans font-semibold">
                     <Bot size={20} className="text-cyan-400" />
                     <span>Nura Assistant</span>
-                    <span className="text-[10px] bg-cyan-500/20 text-cyan-400 px-1.5 py-0.5 rounded border border-cyan-500/30 font-mono">INTELLIGENT</span>
+                    <span className="text-[10px] bg-cyan-500/20 text-cyan-400 px-1.5 py-0.5 rounded border border-cyan-500/30 font-mono uppercase tracking-tighter">Intelligent</span>
                 </div>
                 <div className="flex items-center gap-3">
                     <button onClick={resetChat} title="대화 초기화" className="text-slate-400 hover:text-white transition-colors">
@@ -210,82 +197,35 @@ export const AICompanionChat: React.FC = () => {
                 </div>
             </div>
 
-            {/* Messages Area */}
+            {/* 대화 영역 */}
             <div className="flex-1 overflow-y-auto p-4 space-y-6 custom-scrollbar bg-black/20">
                 {messages.map((msg, idx) => (
                     <div key={idx} className={`flex gap-3 ${msg.role === 'user' ? 'flex-row-reverse' : ''}`}>
-                        <div className={`w-8 h-8 rounded-full flex items-center justify-center shrink-0 border mt-1 ${
-                            msg.role === 'assistant' ? 'bg-cyan-500/10 text-cyan-400 border-cyan-500/20' : 'bg-white/5 text-slate-400 border-white/10'
-                        }`}>
-                            {msg.role === 'assistant' ? <Bot size={16} /> : <User size={16} />}
-                        </div>
+                        {/* [수정] 메시지 내용이 있을 때만 아이콘 표시 */}
+                        {msg.role === 'assistant' && (msg.parts?.length || 0) > 0 && (
+                            <div className="w-8 h-8 rounded-full flex items-center justify-center shrink-0 border mt-1 bg-cyan-500/10 text-cyan-400 border-cyan-500/20">
+                                <Bot size={16} />
+                            </div>
+                        )}
+                        {msg.role === 'user' && (
+                            <div className="w-8 h-8 rounded-full flex items-center justify-center shrink-0 border mt-1 bg-white/5 text-slate-400 border-white/10">
+                                <User size={16} />
+                            </div>
+                        )}
                         <div className={`max-w-[85%] flex flex-col gap-1 ${msg.role === 'user' ? 'items-end' : ''}`}>
-                            {msg.parts.map((part, pIdx) => {
-                                if (part.type === 'thought') {
-                                    const isCompleted = part.content.startsWith('Completed:');
-                                    const isFailed = part.content.startsWith('Failed:');
-                                    
-                                    return (
-                                        <div key={pIdx} className={`bg-slate-800/60 border border-white/5 rounded-xl p-2.5 flex items-center gap-3 w-full animate-in fade-in slide-in-from-left-2 duration-300 ${isFailed ? 'border-red-500/30' : ''}`}>
-                                            {isCompleted ? (
-                                                <div className="w-4 h-4 rounded-full bg-emerald-500/20 text-emerald-400 flex items-center justify-center border border-emerald-500/30">
-                                                    <svg size={10} fill="none" viewBox="0 0 24 24" stroke="currentColor" className="w-2.5 h-2.5"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" /></svg>
-                                                </div>
-                                            ) : isFailed ? (
-                                                <div className="w-4 h-4 rounded-full bg-red-500/20 text-red-400 flex items-center justify-center border border-red-500/30">
-                                                    <X size={10} />
-                                                </div>
-                                            ) : (
-                                                <Loader2 size={12} className="animate-spin text-amber-400" />
-                                            )}
-                                            <span className={`text-[10px] font-mono truncate ${isFailed ? 'text-red-300/80' : 'text-slate-300'}`}>{part.content}</span>
-                                        </div>
-                                    );
-                                }
-                                return (
-                                    <div key={pIdx} className={`rounded-2xl p-4 text-sm font-outfit leading-relaxed shadow-sm ${
-                                        msg.role === 'assistant' 
-                                            ? 'bg-slate-800/50 text-slate-100 rounded-tl-none border border-white/5' 
-                                            : 'bg-cyan-600 text-white rounded-tr-none font-medium'
-                                    }`}>
-                                        <ReactMarkdown 
-                                            remarkPlugins={[remarkGfm]}
-                                            components={{
-                                                code({className, children, ...props}) {
-                                                    const match = /language-(\w+)/.exec(className || '');
-                                                    return match ? (
-                                                        <SyntaxHighlighterAny
-                                                            style={atomDark}
-                                                            language={match[1]}
-                                                            PreTag="div"
-                                                            className="rounded-lg !my-4 !bg-black/40 border border-white/5"
-                                                            {...props}
-                                                        >
-                                                            {String(children).replace(/\n$/, '')}
-                                                        </SyntaxHighlighterAny>
-                                                    ) : (
-                                                        <code className="bg-black/30 px-1.5 py-0.5 rounded text-cyan-300 font-mono text-xs" {...props}>
-                                                            {children}
-                                                        </code>
-                                                    )
-                                                },
-                                                table: ({children}) => <div className="overflow-x-auto my-4"><table className="min-w-full border-collapse border border-white/10 text-xs">{children}</table></div>,
-                                                th: ({children}) => <th className="border border-white/10 bg-white/5 p-2 font-bold">{children}</th>,
-                                                td: ({children}) => <td className="border border-white/10 p-2">{children}</td>,
-                                                ul: ({children}) => <ul className="list-disc pl-5 my-2 space-y-1">{children}</ul>,
-                                                ol: ({children}) => <ol className="list-decimal pl-5 my-2 space-y-1">{children}</ol>,
-                                                p: ({children}) => <p className="mb-2 last:mb-0">{children}</p>
-                                            }}
-                                        >
-                                            {part.content}
-                                        </ReactMarkdown>
-                                    </div>
-                                );
-                            })}
+                            {msg.parts?.map((part, pIdx) => (
+                                part.type === 'thought' 
+                                    ? <ProcessNode key={pIdx} content={part.content} compact />
+                                    : <div key={pIdx} className={`rounded-2xl p-4 text-sm font-outfit leading-relaxed shadow-sm ${msg.role === 'assistant' ? 'bg-slate-800/50 text-slate-100 rounded-tl-none border border-white/5' : 'bg-cyan-600 text-white rounded-tr-none font-medium'}`}>
+                                        <MarkdownRenderer content={part.content} />
+                                      </div>
+                            ))}
                         </div>
                     </div>
                 ))}
-                {isLoading && messages[messages.length - 1].parts.length === 0 && (
+                
+                {/* AI 응답 대기 로더 (메시지가 비어있을 때만 표시) */}
+                {isLoading && (messages[messages.length - 1]?.parts || []).length === 0 && (
                     <div className="flex gap-3">
                         <div className="w-8 h-8 rounded-full bg-cyan-500/10 text-cyan-400 flex items-center justify-center shrink-0 border border-cyan-500/20">
                             <Bot size={16} />
@@ -300,7 +240,7 @@ export const AICompanionChat: React.FC = () => {
                 <div ref={messagesEndRef} />
             </div>
 
-            {/* Input Area */}
+            {/* 입력 영역 생략 (기존 유지) */}
             <div className="p-4 bg-white/5 border-t border-white/5">
                 {isLocked ? (
                     <div className="text-center py-2">
@@ -318,13 +258,7 @@ export const AICompanionChat: React.FC = () => {
                             disabled={isLoading}
                             rows={1}
                         />
-                        <button
-                            onClick={handleSendMessage}
-                            disabled={!inputValue.trim() || isLoading}
-                            className={`absolute right-2 bottom-2 p-2 rounded-lg transition-all ${
-                                !inputValue.trim() || isLoading ? 'text-white/10' : 'text-cyan-400 hover:bg-cyan-500/10'
-                            }`}
-                        >
+                        <button onClick={handleSendMessage} disabled={!inputValue.trim() || isLoading} className={`absolute right-2 bottom-2 p-2 rounded-lg transition-all ${!inputValue.trim() || isLoading ? 'text-white/10' : 'text-cyan-400 hover:bg-cyan-500/10'}`}>
                             <Send size={18} />
                         </button>
                     </div>
