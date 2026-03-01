@@ -1,9 +1,17 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { API_ENDPOINTS, API_URL } from '../config';
 
-export interface Message {
-    role: 'user' | 'ai';
+export interface ChatPart {
+    type: 'text' | 'thought' | 'tool_result';
     content: string;
+}
+
+export interface Message {
+    id: string;
+    role: 'user' | 'assistant';
+    parts: ChatPart[];
+    timestamp: Date;
+    model?: string;
 }
 
 export interface AIModel {
@@ -18,8 +26,8 @@ export interface ChatSession {
     messages: Message[];
     model: string;
     timestamp: Date;
-    draftInput?: string; // 세션별 입력 중인 텍스트 보관
-    isLoading?: boolean; // 세션별 로딩 상태
+    draftInput?: string;
+    isLoading?: boolean;
 }
 
 // API Service
@@ -38,8 +46,13 @@ export const chatService = {
 };
 
 const INITIAL_MESSAGE: Message = { 
-    role: 'ai', 
-    content: `# ChatOps 시스템 활성화\n프로젝트 상태를 실시간으로 분석하고 제어할 수 있는 AI 환경에 오신 것을 환영합니다.` 
+    id: 'initial',
+    role: 'assistant', 
+    parts: [{ 
+        type: 'text', 
+        content: `# ChatOps 시스템 활성화\n프로젝트 상태를 실시간으로 분석하고 제어할 수 있는 AI 환경에 오신 것을 환영합니다.` 
+    }],
+    timestamp: new Date()
 };
 
 export const useChatOps = (initialModel: string = 'gemini-1.5-flash') => {
@@ -50,23 +63,17 @@ export const useChatOps = (initialModel: string = 'gemini-1.5-flash') => {
     const [sessions, setSessions] = useState<ChatSession[]>([]);
     const [currentSessionId, setCurrentSessionId] = useState<string | null>(null);
     
-    // 현재 세션 ID 참조용 Ref
     const currentSessionIdRef = useRef<string | null>(null);
     useEffect(() => {
         currentSessionIdRef.current = currentSessionId;
     }, [currentSessionId]);
 
-    // 모델 목록 조회 및 초기 설정
     useEffect(() => {
         const loadModels = async () => {
             try {
                 const data = await chatService.fetchModels();
                 if (data.models && data.models.length > 0) {
                     setModels(data.models);
-
-                    // 1. 백엔드에서 명시적으로 현재 모델(currentModel)을 알려주면 그것을 우선 사용
-                    // 2. 아니면 기존 currentModel이 목록에 있는지 확인
-                    // 3. 둘 다 아니면 목록의 첫 번째 모델을 선택
                     if (data.currentModel) {
                         setCurrentModel(data.currentModel);
                     } else {
@@ -81,10 +88,8 @@ export const useChatOps = (initialModel: string = 'gemini-1.5-flash') => {
             }
         };
         loadModels();
-    }, []); // 초기 1회만 실행하여 동기화
+    }, []);
 
-
-    // 새로운 세션 생성
     const createNewSession = useCallback(() => {
         const newId = Date.now().toString();
         const newSession: ChatSession = {
@@ -102,9 +107,7 @@ export const useChatOps = (initialModel: string = 'gemini-1.5-flash') => {
         setCurrentSessionId(newId);
     }, [currentModel]);
 
-    // 세션 로드 (입력창 상태 포함)
     const loadSession = useCallback((session: ChatSession, currentInput?: string) => {
-        // 현재 세션의 입력 내용을 저장하고 전환
         if (currentSessionId) {
             setSessions(prev => prev.map(s => 
                 s.id === currentSessionId ? { ...s, draftInput: currentInput } : s
@@ -118,7 +121,6 @@ export const useChatOps = (initialModel: string = 'gemini-1.5-flash') => {
         return session.draftInput || '';
     }, [currentSessionId]);
 
-    // 메시지 전송 (병렬 처리 지원)
     const sendMessage = async (input: string, sessionId: string | null, selectedRepo?: any, onThinking?: (status: string | null) => void) => {
         if (!input.trim()) return;
         
@@ -129,7 +131,7 @@ export const useChatOps = (initialModel: string = 'gemini-1.5-flash') => {
             const newSession: ChatSession = {
                 id: newId,
                 title: input.length > 20 ? input.substring(0, 20) + '...' : input,
-                messages: [INITIAL_MESSAGE], // sendMessage 내부에서는 초기 메시지 보장
+                messages: [INITIAL_MESSAGE],
                 model: currentModel,
                 timestamp: new Date(),
                 draftInput: '',
@@ -139,41 +141,42 @@ export const useChatOps = (initialModel: string = 'gemini-1.5-flash') => {
             setCurrentSessionId(newId);
         }
 
-        // 해당 세션의 로딩 상태 활성화
         setSessions(prev => prev.map(s => s.id === activeSessionId ? { ...s, isLoading: true, draftInput: '' } : s));
 
-        // 해당 세션의 현재 메시지 이력 가져오기
         const targetSession = sessions.find(s => s.id === activeSessionId);
         const baseMessages = targetSession ? targetSession.messages : messages;
-        const newMessages: Message[] = [...baseMessages, { role: 'user', content: input }];
         
-        // 현재 보고 있는 세션이면 UI 업데이트
+        const userMsg: Message = {
+            id: Date.now().toString(),
+            role: 'user',
+            parts: [{ type: 'text', content: input }],
+            timestamp: new Date()
+        };
+
+        const aiMsg: Message = {
+            id: (Date.now() + 1).toString(),
+            role: 'assistant',
+            parts: [],
+            timestamp: new Date(),
+            model: currentModel
+        };
+
+        const nextMessages: Message[] = [...baseMessages, userMsg, aiMsg];
+        
         if (currentSessionIdRef.current === activeSessionId) {
-            setMessages(newMessages);
+            setMessages(nextMessages);
         }
 
         try {
-            // [Optimization] Sliding Window strategy for context efficiency
-            const CONTEXT_WINDOW_LIMIT = 10;
-            const historyMessages = newMessages.slice(-CONTEXT_WINDOW_LIMIT);
-            
-            // Zero Script QA Log
-            console.log(JSON.stringify({
-                event: 'chat.context_optimized',
-                originalCount: newMessages.length,
-                optimizedCount: historyMessages.length,
-                windowLimit: CONTEXT_WINDOW_LIMIT,
-                timestamp: new Date().toISOString()
-            }));
+            const history = nextMessages
+                .filter(m => m.parts.length > 0)
+                .slice(-10)
+                .map(m => ({
+                    role: m.role === 'user' ? 'user' : 'model',
+                    parts: m.parts.filter(p => p.type === 'text').map(p => ({ text: p.content }))
+                }));
 
-            let history = historyMessages.map(msg => ({
-                role: msg.role === 'user' ? 'user' : 'model',
-                parts: [{ text: msg.content }]
-            }));
-
-            if (history.length > 0 && history[0].role === 'model') {
-                history.shift();
-            }
+            if (history.length > 0 && history[0].role === 'model') history.shift();
 
             const res = await fetch(API_ENDPOINTS.CHAT_STREAM, {
                 method: 'POST',
@@ -185,7 +188,6 @@ export const useChatOps = (initialModel: string = 'gemini-1.5-flash') => {
 
             const reader = res.body?.getReader();
             const decoder = new TextDecoder();
-            let accumulatedContent = '';
 
             if (reader) {
                 while (true) {
@@ -198,42 +200,53 @@ export const useChatOps = (initialModel: string = 'gemini-1.5-flash') => {
                     for (const line of lines) {
                         if (line.startsWith('data: ')) {
                             const data = line.slice(6);
-                            if (data === '[DONE]') break; // 레거시 지원
+                            if (data === '[DONE]') break;
 
                             try {
                                 const parsed = JSON.parse(data);
-                                
-                                // 1. 전체 루프 종료 감지
-                                if (parsed.done) {
-                                    break;
-                                }
+                                if (parsed.done) break;
 
-                                // 2. AI의 답변 조각 처리
-                                if (parsed.type === 'answer' && parsed.text) {
-                                    if (onThinking) onThinking(null); // 답변 시작 시 생각 중 상태 해제
-                                    accumulatedContent += parsed.text;
-                                    const updatedMessages: Message[] = [...newMessages, { role: 'ai' as const, content: accumulatedContent }];
+                                    if (parsed.type === 'answer' || parsed.type === 'thought') {
+                                        const type = parsed.type === 'answer' ? 'text' : 'thought';
+                                        const content = parsed.type === 'answer' ? parsed.text : parsed.content;
 
-                                    if (currentSessionIdRef.current === activeSessionId) {
-                                        setMessages(updatedMessages);
+                                        if (parsed.type === 'answer' && onThinking) onThinking(null);
+                                        if (parsed.type === 'thought' && onThinking) onThinking(content);
+
+                                        setMessages(prev => {
+                                            const updatedMessages = [...prev];
+                                            const lastMsg = updatedMessages[updatedMessages.length - 1];
+                                            
+                                            if (lastMsg && lastMsg.role === 'assistant') {
+                                                if (type === 'text') {
+                                                    const lastPart = lastMsg.parts[lastMsg.parts.length - 1];
+                                                    if (lastPart && lastPart.type === 'text') {
+                                                        lastPart.content += content;
+                                                    } else {
+                                                        lastMsg.parts.push({ type: 'text', content });
+                                                    }
+                                                } else {
+                                                    // [지능형 갱신] 역순 탐색하여 완료되지 않은 가장 최근의 thought 파트 찾기
+                                                    const targetPart = [...lastMsg.parts].reverse().find(p => 
+                                                        p.type === 'thought' && 
+                                                        !p.content.startsWith('Completed:') && 
+                                                        !p.content.startsWith('Failed:')
+                                                    );
+
+                                                    if (targetPart && (content.startsWith('Completed:') || content.startsWith('Failed:') || content.includes('Analyzing'))) {
+                                                        targetPart.content = content;
+                                                    } else {
+                                                        lastMsg.parts.push({ type: 'thought', content });
+                                                    }
+                                                }
+                                            }
+
+                                            setSessions(sPrev => sPrev.map(s => 
+                                                s.id === activeSessionId ? { ...s, messages: updatedMessages } : s
+                                            ));
+                                            return updatedMessages;
+                                        });
                                     }
-                                    
-                                    setSessions(sPrev => sPrev.map(s => 
-                                        s.id === activeSessionId 
-                                            ? { 
-                                                ...s, 
-                                                messages: updatedMessages,
-                                                title: s.title === 'New Analysis Session' ? (input.length > 20 ? input.substring(0, 20) + '...' : input) : s.title
-                                              } 
-                                            : s
-                                    ));
-                                }
-
-                                // 3. AI의 생각 과정(도구 호출 중) 처리
-                                if (parsed.type === 'thought' && parsed.content) {
-                                    if (onThinking) onThinking(parsed.content);
-                                    console.log(`Agent Thinking: ${parsed.content}`);
-                                }
                             } catch (e) {}
                         }
                     }
@@ -242,11 +255,14 @@ export const useChatOps = (initialModel: string = 'gemini-1.5-flash') => {
         } catch (error) {
             console.error('Chat error:', error);
             if (currentSessionIdRef.current === activeSessionId) {
-                setMessages(prev => [...prev, { role: 'ai', content: '시스템 오류가 발생했습니다.' }]);
+                setMessages(prev => {
+                    const next = [...prev];
+                    next[next.length - 1].parts.push({ type: 'text', content: '오류가 발생했습니다.' });
+                    return next;
+                });
             }
         } finally {
             if (onThinking) onThinking(null);
-            // 해당 세션의 로딩 상태 해제
             setSessions(prev => prev.map(s => s.id === activeSessionId ? { ...s, isLoading: false } : s));
         }
     };

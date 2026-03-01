@@ -237,7 +237,13 @@ router.post('/chat/stream', async (req: Request, res: Response) => {
 
             const functionResponses: any[] = [];
             for (const call of calls) {
-                res.write(`data: ${JSON.stringify({ type: 'thought', content: `Executing ${call.name}...` })}\n\n`);
+                // 1. 도구 실행 시작 상태 전송 (생각 중 표시)
+                let statusMessage = `Executing ${call.name}...`;
+                if (call.name === 'list_files') statusMessage = `Reading directory: ${(call.args as any).path || '/'}`;
+                if (call.name === 'read_file') statusMessage = `Reading file: ${(call.args as any).path}`;
+                if (call.name === 'read_pr_diff') statusMessage = `Fetching PR Diff: #${(call.args as any).pull_number}`;
+                
+                res.write(`data: ${JSON.stringify({ type: 'thought', content: statusMessage })}\n\n`);
                 
                 let toolResult: any;
                 try {
@@ -262,9 +268,14 @@ router.post('/chat/stream', async (req: Request, res: Response) => {
                         }
                         toolResult = diff;
                     }
+
+                    // 2. 도구 실행 완료 상태 전송 (체크 표시 등으로 프론트엔드에서 활용 가능)
+                    res.write(`data: ${JSON.stringify({ type: 'thought', content: `Completed: ${call.name}` })}\n\n`);
                 } catch (e: any) {
                     qaLogger.error('mcp.tool_error', { tool: call.name, error: e.message });
                     toolResult = { error: `Failed to execute tool: ${e.message}` };
+                    // 에러 발생 시에도 상태를 전송하여 프론트엔드 로딩 해제
+                    res.write(`data: ${JSON.stringify({ type: 'thought', content: `Failed: ${call.name}` })}\n\n`);
                 }
 
                 functionResponses.push({
