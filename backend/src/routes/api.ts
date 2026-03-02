@@ -15,7 +15,7 @@ import { detectSkillFromMessage } from '../utils/skillDetector';
 
 const router = Router();
 
-// --- Skills & Context Hook API (기존 유지) ---
+// --- Skills & Context Hook API ---
 router.get('/skills', async (req: Request, res: Response) => {
     try {
         const skillsDir = path.join(__dirname, '../skills');
@@ -58,7 +58,7 @@ router.get('/context/hook', async (req: Request, res: Response) => {
     } catch (e) { res.status(500).json({ error: 'Failed to read file' }); }
 });
 
-// --- GitHub API (기존 유지) ---
+// --- GitHub API ---
 router.get('/github/repos', async (req: Request, res: Response) => {
     const token = process.env.GITHUB_TOKEN;
     if (!token) return res.status(500).json({ error: 'GitHub token missing' });
@@ -124,7 +124,7 @@ router.post('/diagnose', async (req: Request, res: Response) => {
 });
 
 /**
- * POST /api/chat/stream (v3.5 - Advanced MCP Tools)
+ * POST /api/chat/stream (v3.7 - Enhanced Resource Processing)
  */
 router.post('/chat/stream', async (req: Request, res: Response) => {
     const { message, history, model, selectedRepo, activeSkillId, attachedResources } = req.body;
@@ -152,7 +152,7 @@ router.post('/chat/stream', async (req: Request, res: Response) => {
             }
         }
 
-        // --- [Attached Resources Content Fetching] ---
+        // --- [Attached Resources Content Fetching - v3.7 Support Folder] ---
         if (attachedResources && Array.isArray(attachedResources) && attachedResources.length > 0) {
             const resourceContents = await Promise.all(attachedResources.map(async (res: any) => {
                 try {
@@ -162,6 +162,12 @@ router.post('/chat/stream', async (req: Request, res: Response) => {
                     else if (res.type === 'file') {
                         const data = await githubService.fetchRepoContent(token, res.owner, res.repo, res.id);
                         content = data.content ? Buffer.from(data.content, 'base64').toString('utf-8') : JSON.stringify(data);
+                    } else if (res.type === 'folder') {
+                        // [v3.7] 폴더 타입 처리: 해당 경로의 하위 구조를 가져와 텍스트로 구성
+                        const tree = await githubService.fetchFileTree(token, res.owner, res.repo);
+                        const folderPath = res.id;
+                        const subItems = tree.filter((f: any) => f.path.startsWith(folderPath));
+                        content = `Directory Structure for ${folderPath}:\n` + subItems.map((f: any) => `- ${f.path} (${f.type})`).join('\n');
                     }
                     if (!content) return `[EMPTY RESOURCE: ${res.name}]`;
                     return `[ATTACHED ${res.type.toUpperCase()}: ${res.name}]\n${content.substring(0, 8000)}`; 
@@ -186,7 +192,6 @@ router.post('/chat/stream', async (req: Request, res: Response) => {
         while (iteration < MAX_ITERATIONS) {
             iteration++;
             const result = await getAiChatStreamResponse(iteration === 1 ? currentPrompt : "", activeHistory, repoContext, model);
-
             let fullTextInTurn = '';
             for await (const chunk of result.stream) {
                 const chunkText = chunk.text();
@@ -195,37 +200,29 @@ router.post('/chat/stream', async (req: Request, res: Response) => {
                     res.write(`data: ${JSON.stringify({ type: 'answer', text: chunkText })}\n\n`);
                 }
             }
-
             const response = await result.response;
             const calls = response.functionCalls();
-
             if (iteration === 1) activeHistory.push({ role: 'user', parts: [{ text: currentPrompt }] });
-            
             const modelParts: any[] = [];
             if (fullTextInTurn) modelParts.push({ text: fullTextInTurn });
             if (calls && calls.length > 0) calls.forEach(call => modelParts.push({ functionCall: call }));
             if (modelParts.length > 0) activeHistory.push({ role: 'model', parts: modelParts });
-
             if (!calls || calls.length === 0) break;
-
             const callFingerprint = JSON.stringify(calls);
             if (lastCallTracker.has(callFingerprint)) break;
             lastCallTracker.add(callFingerprint);
-
             const functionResponses: any[] = [];
             for (const call of calls) {
                 res.write(`data: ${JSON.stringify({ type: 'thought', content: `Executing ${call.name}...` })}\n\n`);
                 let toolResult: any;
                 try {
                     const [owner, repo] = selectedRepo ? selectedRepo.full_name.split('/') : [null, null];
-                    
                     if (call.name === 'list_files' && owner && repo) {
                         toolResult = await githubService.fetchRepoContent(token, owner, repo, (call.args as any).path || '');
                     } else if (call.name === 'read_file' && owner && repo) {
                         const data = await githubService.fetchRepoContent(token, owner, repo, (call.args as any).path);
                         toolResult = data.content ? Buffer.from(data.content, 'base64').toString('utf-8') : JSON.stringify(data);
                     } else if (call.name === 'read_many_files' && owner && repo) {
-                        // [신규] 대량 읽기 구현
                         const paths = (call.args as any).paths || [];
                         const files = await Promise.all(paths.slice(0, 10).map(async (p: string) => {
                             try {
@@ -235,13 +232,10 @@ router.post('/chat/stream', async (req: Request, res: Response) => {
                         }));
                         toolResult = { files };
                     } else if (call.name === 'grep_search' && owner && repo) {
-                        // [신규] 코드 검색 구현
                         toolResult = await githubService.searchCode(token, owner, repo, (call.args as any).query);
                     } else if (call.name === 'glob' && owner && repo) {
-                        // [신규] Glob 탐색 구현 (트리를 가져와서 정규표현식 매칭)
                         const pattern = (call.args as any).pattern || '';
                         const tree = await githubService.fetchFileTree(token, owner, repo);
-                        // 단순 glob to regex 변환 (예: **/*.ts -> .*\.ts$)
                         const regexStr = pattern.replace(/\./g, '\\.').replace(/\*\*/g, '.*').replace(/\*/g, '[^/]*');
                         const regex = new RegExp(`^${regexStr}$`);
                         const paths = tree.filter((f: any) => f.type === 'blob' && regex.test(f.path)).map((f: any) => f.path);
@@ -249,7 +243,6 @@ router.post('/chat/stream', async (req: Request, res: Response) => {
                     } else if (call.name === 'read_pr_diff' && owner && repo) {
                         toolResult = await githubService.fetchPullRequestDiff(token, owner, repo, (call.args as any).pull_number);
                     }
-
                     if (typeof toolResult === 'string' && toolResult.length > 10000) toolResult = toolResult.substring(0, 10000) + "...(truncated)";
                     res.write(`data: ${JSON.stringify({ type: 'thought', content: `Completed: ${call.name}` })}\n\n`);
                 } catch (e: any) {
@@ -260,7 +253,6 @@ router.post('/chat/stream', async (req: Request, res: Response) => {
             }
             activeHistory.push({ role: 'function', parts: functionResponses });
         }
-
         res.write(`data: ${JSON.stringify({ done: true })}\n\n`);
         res.end();
     } catch (error: any) {
