@@ -12,17 +12,14 @@ const app: Express = express();
 const port = process.env.PORT || 3001;
 
 // 1. 보안 헤더 설정 (helmet)
-app.use(helmet());
+// 외부 접속 시에도 리소스 로드를 허용하기 위해 crossOriginResourcePolicy 설정 조정
+app.use(helmet({
+  crossOriginResourcePolicy: { policy: "cross-origin" }
+}));
 
-// 2. CORS 설정: 로컬 개발 환경 안정성 강화
-const allowedOrigins = [
-  'http://localhost:5173',
-  'http://127.0.0.1:5173',
-  process.env.FRONTEND_URL
-].filter(Boolean) as string[];
-
+// 2. CORS 설정: 모든 오리진 허용 (외부 IP 접속 지원)
 app.use(cors({
-  origin: allowedOrigins,
+  origin: true, // 모든 요청 오리진 허용
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
   allowedHeaders: ['Content-Type', 'Authorization'],
   credentials: true,
@@ -32,7 +29,7 @@ app.use(cors({
 // 3. JSON 요청 본문 파싱 및 크기 제한
 app.use(express.json({ limit: '1mb' }));
 
-// 4. 전역 Rate Limiting (개발 편의를 위해 limit 상향 조정)
+// 4. 전역 Rate Limiting
 const limiter = rateLimit({
   windowMs: 15 * 60 * 1000,
   max: 1000, 
@@ -52,6 +49,6 @@ app.get('/', (req: Request, res: Response) => {
 
 // 서버 실행: 0.0.0.0 바인딩을 통해 로컬 네트워크 접근성 확보
 app.listen(Number(port), '0.0.0.0', () => {
-  console.log(`[server]: Server is running at http://localhost:${port}`);
-  console.log(`[server]: Internal API available at http://127.0.0.1:${port}/api`);
+  console.log(`[server]: Server is running at http://0.0.0.0:${port}`);
+  console.log(`[server]: API endpoints available for remote access.`);
 });
