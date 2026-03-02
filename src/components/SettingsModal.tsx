@@ -86,7 +86,7 @@ const UserEditModal: React.FC<{
 
     return (
         <div className="fixed inset-0 z-[200] flex items-center justify-center bg-black/80 backdrop-blur-md p-4 animate-in fade-in duration-200">
-            <div className="w-full max-w-lg bg-slate-900 border border-white/10 rounded-[2.5rem] shadow-2xl overflow-hidden animate-in zoom-in-95 duration-200 font-sans">
+            <div className="w-full max-w-lg bg-slate-900 border border-white/10 rounded-3xl shadow-2xl overflow-hidden animate-in zoom-in-95 duration-200 font-sans">
                 <div className="p-6 border-b border-white/5 flex justify-between items-center bg-white/5">
                     <h3 className="text-lg font-black text-white uppercase italic tracking-tight flex items-center gap-2">
                         {mode === 'add' ? <Plus size={18} /> : <Edit2 size={18} />}
@@ -314,7 +314,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose, c
                                     </div>
                                     <div className="grid grid-cols-2 gap-6 pt-4">
                                         <div className="space-y-2"><label className="text-[10px] font-black text-slate-500 uppercase tracking-[0.2em] ml-1">New PW</label><input type="password" value={profileForm.newPw} onChange={(e) => setProfileForm({...profileForm, newPw: e.target.value})} className="w-full bg-white/5 border border-white/10 rounded-2xl px-5 py-4 text-white text-sm focus:border-cyan-500 transition-all outline-none" placeholder="Change?" /></div>
-                                        <div className="space-y-2"><label className="text-[10px] font-black text-slate-500 uppercase tracking-[0.2em] ml-1">Confirm</label><input type="password" value={profileForm.confirmPw} onChange={(e) => setConfirmPw(e.target.value)} className={`w-full bg-white/5 border rounded-2xl px-5 py-4 text-white text-sm focus:border-cyan-500 outline-none ${confirmPw && profileForm.newPw !== confirmPw ? 'border-red-500/50' : 'border-white/10'}`} /></div>
+                                        <div className="space-y-2"><label className="text-[10px] font-black text-slate-500 uppercase tracking-[0.2em] ml-1">Confirm</label><input type="password" value={profileForm.confirmPw} onChange={(e) => setProfileForm({...profileForm, confirmPw: e.target.value})} className={`w-full bg-white/5 border rounded-2xl px-5 py-4 text-white text-sm focus:border-cyan-500 outline-none ${profileForm.confirmPw && profileForm.newPw !== profileForm.confirmPw ? 'border-red-500/50' : 'border-white/10'}`} /></div>
                                     </div>
                                 </div>
                                 <button type="submit" disabled={isLoading} className="flex items-center justify-center gap-3 w-full bg-cyan-500 text-slate-950 font-black py-5 rounded-3xl hover:bg-white transition-all shadow-glow"><Save size={20} /> Update Profile Info</button>
