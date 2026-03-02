@@ -24,7 +24,8 @@ router.post('/login', async (req: Request, res: Response) => {
                     name: user.name,
                     email: user.email,
                     department: user.department,
-                    role: user.role 
+                    role: user.role,
+                    preferred_model: user.preferred_model // [v3.8] 추가
                 } 
             });
         } else {

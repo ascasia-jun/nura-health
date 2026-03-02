@@ -29,165 +29,23 @@ const getUserCredential = async (userId: string, serviceName: string) => {
     return serviceName === 'github' ? process.env.GITHUB_TOKEN : null;
 };
 
-// --- [Credentials, Session, GitHub APIs (Omitted for brevity - will keep full content)] ---
+// --- [User Profile & Credential API] ---
 
 /**
- * POST /api/chat/stream
- * [v3.8 Refinement] 역할 교차 규칙(user->model) 엄격 준수 및 루프 로직 강화
+ * PUT /api/me
+ * [v3.8] 선호 모델 업데이트 기능 추가
  */
-router.post('/chat/stream', async (req: Request, res: Response) => {
-    const userId = req.headers['x-user-id'] as string;
-    const { message, history, model, selectedRepo, activeSkillId, attachedResources, sessionId } = req.body;
-    if (!userId) return res.status(401).json({ error: 'Unauthorized' });
-
-    const ghToken = await getUserCredential(userId, 'github');
-    const geminiKey = await getUserCredential(userId, 'gemini');
-
-    res.setHeader('Content-Type', 'text/event-stream');
-    res.setHeader('Cache-Control', 'no-cache');
-    res.setHeader('Connection', 'keep-alive');
-
-    try {
-        const repoContext = selectedRepo ? `Repository: ${selectedRepo.full_name}` : undefined;
-        // Gemini API는 (past_history) + (current_user_message) 구조를 기대함
-        let activeHistory: any[] = [...history]; 
-        let currentPrompt: string = message; 
-        let finalSkillId = activeSkillId;
-
-        // Auto Trigger
-        if (!finalSkillId) {
-            finalSkillId = await detectSkillFromMessage(message);
-            if (finalSkillId) res.write(`data: ${JSON.stringify({ type: 'thought', content: `Auto-activating skill: ${finalSkillId}` })}\n\n`);
-        }
-
-        // Context Construction
-        if (attachedResources?.length > 0) {
-            const resourceContents = await Promise.all(attachedResources.map(async (resObj: any) => {
-                try {
-                    let content = '';
-                    const token = ghToken || "";
-                    if (resObj.type === 'pr') content = await githubService.fetchPullRequestDiff(token, resObj.owner, resObj.repo, Number(resObj.id));
-                    else if (resObj.type === 'commit') content = await githubService.fetchCommitDiff(token, resObj.owner, resObj.repo, resObj.id);
-                    else if (resObj.type === 'file') {
-                        const data = await githubService.fetchRepoContent(token, resObj.owner, resObj.repo, resObj.id);
-                        content = data.content ? Buffer.from(data.content, 'base64').toString('utf-8') : JSON.stringify(data);
-                    } else if (resObj.type === 'folder') {
-                        const tree = await githubService.fetchFileTree(token, resObj.owner, resObj.repo);
-                        const subItems = tree.filter((f: any) => f.path.startsWith(resObj.id));
-                        content = `Structure for ${resObj.id}:\n` + subItems.map((f: any) => `- ${f.path}`).join('\n');
-                    }
-                    return `[ATTACHED ${resObj.type.toUpperCase()}: ${resObj.name}]\n${content.substring(0, 5000)}`; 
-                } catch (e) { return `[FAILED: ${resObj.name}]`; }
-            }));
-            currentPrompt = `${resourceContents.join('\n\n')}\n\n---\n\n${currentPrompt}`;
-        }
-        
-        if (finalSkillId) {
-            const skillPath = path.join(__dirname, '../skills', finalSkillId, 'SKILL.md');
-            const skillContent = await fs.readFile(skillPath, 'utf-8');
-            currentPrompt = `<activated_skill name="${finalSkillId}">\n${skillContent}\n</activated_skill>\n\n${currentPrompt}`;
-        }
-
-        let iteration = 0;
-        let fullAIResponse = '';
-
-        while (iteration < 30) {
-            iteration++;
-            
-            // [중요] 첫 턴은 currentPrompt를 보내고, 이후 턴은 도구 응답을 담은 history를 보냄
-            const result = await getAiChatStreamResponse(
-                iteration === 1 ? currentPrompt : "", 
-                activeHistory, 
-                repoContext, 
-                model, 
-                geminiKey || undefined
-            );
-
-            let turnText = '';
-            for await (const chunk of result.stream) {
-                const text = chunk.text();
-                if (text) { turnText += text; fullAIResponse += text; res.write(`data: ${JSON.stringify({ type: 'answer', text })}\n\n`); }
-            }
-
-            const response = await result.response;
-            const calls = response.functionCalls();
-
-            // --- 역할 동기화 루틴 ---
-            
-            // 1. 모델이 질문을 받았음을 history에 기록 (user 역할 추가)
-            if (iteration === 1) {
-                activeHistory.push({ role: 'user', parts: [{ text: currentPrompt }] });
-            }
-
-            // 2. 모델의 응답 기록 (model 역할 추가)
-            const modelParts: any[] = [];
-            if (turnText) modelParts.push({ text: turnText });
-            if (calls && Array.isArray(calls) && calls.length > 0) {
-                calls.forEach(call => modelParts.push({ functionCall: call }));
-            }
-            if (modelParts.length > 0) {
-                activeHistory.push({ role: 'model', parts: modelParts });
-            }
-
-            // 도구 호출이 없으면 종료
-            if (!calls || calls.length === 0) break;
-
-            // 3. 도구 실행 및 응답 기록 (function 역할 추가)
-            const functionResponses: any[] = [];
-            for (const call of calls) {
-                res.write(`data: ${JSON.stringify({ type: 'thought', content: `Executing ${call.name}...` })}\n\n`);
-                let toolResult: any;
-                try {
-                    const [owner, repo] = selectedRepo.full_name.split('/');
-                    const token = ghToken || "";
-                    if (call.name === 'list_files') toolResult = await githubService.fetchRepoContent(token, owner, repo, (call.args as any).path || '');
-                    else if (call.name === 'read_file') {
-                        const data = await githubService.fetchRepoContent(token, owner, repo, (call.args as any).path);
-                        toolResult = data.content ? Buffer.from(data.content, 'base64').toString('utf-8') : JSON.stringify(data);
-                    }
-                    res.write(`data: ${JSON.stringify({ type: 'thought', content: `Completed: ${call.name}` })}\n\n`);
-                } catch (e: any) { toolResult = { error: e.message }; }
-                
-                // Gemini SDK는 functionResponse를 model 역할의 대칭인 function 역할로 받음
-                functionResponses.push({ 
-                    functionResponse: { name: call.name, response: { content: toolResult } } 
-                });
-            }
-            
-            // function 결과는 model 다음에 와야 함 (user -> model -> function -> model)
-            // SDK 버전에 따라 function role을 별도로 받거나 user role로 받기도 하나, 
-            // 여기서는 교차 규칙 준수를 위해 function 응답을 history에 정석대로 추가
-            activeHistory.push({ role: 'function', parts: functionResponses });
-        }
-
-        // DB 저장 (사용자 메시지 + 전체 AI 답변)
-        if (sessionId) {
-            const db = getDb();
-            await db.run('INSERT INTO messages (session_id, role, content_json, timestamp) VALUES (?, ?, ?, ?)', [sessionId, 'user', JSON.stringify({ parts: [{ type: 'text', content: message }], meta: { activeSkillId, attachedResources } }), new Date()]);
-            await db.run('INSERT INTO messages (session_id, role, content_json, timestamp) VALUES (?, ?, ?, ?)', [sessionId, 'assistant', JSON.stringify({ parts: [{ type: 'text', content: fullAIResponse }] }), new Date()]);
-        }
-        res.write(`data: ${JSON.stringify({ done: true })}\n\n`);
-        res.end();
-    } catch (error: any) {
-        res.write(`data: ${JSON.stringify({ type: 'answer', text: `\n\n⚠️ 오류: ${error.message}` })}\n\n`);
-        res.write(`data: ${JSON.stringify({ done: true })}\n\n`);
-        res.end();
-    }
-});
-
-// --- [Rest of the APIs - Maintained] ---
-
 router.put('/me', async (req: Request, res: Response) => {
     const userId = req.headers['x-user-id'] as string;
-    const { name, email, department, password } = req.body;
+    const { name, email, department, password, preferred_model } = req.body;
     if (!userId) return res.status(401).json({ error: 'Unauthorized' });
     try {
         const db = getDb();
         if (password) {
             const hash = await bcrypt.hash(password, 10);
-            await db.run('UPDATE users SET name = ?, email = ?, department = ?, password_hash = ? WHERE id = ?', [name, email, department, hash, userId]);
+            await db.run('UPDATE users SET name = ?, email = ?, department = ?, password_hash = ?, preferred_model = ? WHERE id = ?', [name, email, department, hash, preferred_model, userId]);
         } else {
-            await db.run('UPDATE users SET name = ?, email = ?, department = ? WHERE id = ?', [name, email, department, userId]);
+            await db.run('UPDATE users SET name = ?, email = ?, department = ?, preferred_model = ? WHERE id = ?', [name, email, department, preferred_model, userId]);
         }
         res.json({ success: true });
     } catch (e) { res.status(500).json({ error: 'Update failed' }); }
@@ -201,7 +59,7 @@ router.get('/credentials', async (req: Request, res: Response) => {
         const creds = await db.all('SELECT service_name, updated_at FROM user_credentials WHERE user_id = ?', [userId]);
         const status = { github: creds.some(c => c.service_name === 'github'), gemini: creds.some(c => c.service_name === 'gemini') };
         res.json({ status, creds });
-    } catch (e) { res.status(500).json({ error: 'Failed' }); }
+    } catch (e) { res.status(500).json({ error: 'Failed to fetch credentials' }); }
 });
 
 router.post('/credentials', async (req: Request, res: Response) => {
@@ -209,7 +67,10 @@ router.post('/credentials', async (req: Request, res: Response) => {
     const { serviceName, token } = req.body;
     if (!userId) return res.status(401).json({ error: 'Unauthorized' });
     try {
-        if (serviceName === 'gemini') { const isValid = await validateGeminiKey(token); if (!isValid) return res.status(400).json({ error: 'Invalid API Key' }); }
+        if (serviceName === 'gemini') {
+            const isValid = await validateGeminiKey(token);
+            if (!isValid) return res.status(400).json({ error: '유효하지 않은 Gemini API 키입니다.' });
+        }
         const db = getDb();
         const encrypted = encrypt(token);
         const existing = await db.get('SELECT id FROM user_credentials WHERE user_id = ? AND service_name = ?', [userId, serviceName]);
@@ -218,6 +79,8 @@ router.post('/credentials', async (req: Request, res: Response) => {
         res.json({ success: true });
     } catch (e) { res.status(500).json({ error: 'Save failed' }); }
 });
+
+// --- [User Session & History API] ---
 
 router.get('/sessions', async (req: Request, res: Response) => {
     const userId = req.headers['x-user-id'] as string;
@@ -254,6 +117,8 @@ router.get('/sessions/:id/messages', async (req: Request, res: Response) => {
         res.json({ messages });
     } catch (e) { res.status(500).json({ error: 'Load failed' }); }
 });
+
+// --- [GitHub API Routes] ---
 
 router.get('/github/public-repos', async (req: Request, res: Response) => {
     const userId = req.headers['x-user-id'] as string;
@@ -308,15 +173,61 @@ router.get('/github/repos/:owner/:repo/tree', async (req: Request, res: Response
     try { const tree = await githubService.fetchFileTree(token || "", owner, repo); res.json({ tree }); } catch (error: any) { res.status(500).json({ error: error.message }); }
 });
 
+// --- [Admin, Skills, Models API] ---
+
 router.get('/admin/users', async (req: Request, res: Response) => {
     const adminId = req.headers['x-user-id'] as string;
     try {
         const db = getDb();
         const admin = await db.get('SELECT role FROM users WHERE id = ?', [adminId]);
         if (!admin || admin.role !== 'admin') return res.status(403).json({ error: 'Forbidden' });
-        const users = await db.all('SELECT id, username, name, email, department, role, created_at FROM users');
+        const users = await db.all('SELECT id, username, name, email, department, role, preferred_model, created_at FROM users');
         res.json({ users });
     } catch (e) { res.status(500).json({ error: 'Failed' }); }
+});
+
+router.post('/admin/users', async (req: Request, res: Response) => {
+    const adminId = req.headers['x-user-id'] as string;
+    const { username, password, name, email, department, role, preferred_model } = req.body;
+    try {
+        const db = getDb();
+        const admin = await db.get('SELECT role FROM users WHERE id = ?', [adminId]);
+        if (!admin || admin.role !== 'admin') return res.status(403).json({ error: 'Forbidden' });
+        const hash = await bcrypt.hash(password, 10);
+        const id = `user_${Date.now()}`;
+        await db.run('INSERT INTO users (id, username, password_hash, name, email, department, role, preferred_model) VALUES (?, ?, ?, ?, ?, ?, ?, ?)', [id, username, hash, name, email, department, role || 'user', preferred_model || 'gemini-2.0-flash']);
+        res.json({ success: true });
+    } catch (e: any) { res.status(500).json({ error: 'Create failed' }); }
+});
+
+router.put('/admin/users/:id', async (req: Request, res: Response) => {
+    const adminId = req.headers['x-user-id'] as string;
+    const { id } = req.params;
+    const { username, password, name, email, department, role, preferred_model } = req.body;
+    try {
+        const db = getDb();
+        const admin = await db.get('SELECT role FROM users WHERE id = ?', [adminId]);
+        if (!admin || admin.role !== 'admin') return res.status(403).json({ error: 'Forbidden' });
+        if (password) {
+            const hash = await bcrypt.hash(password, 10);
+            await db.run('UPDATE users SET username = ?, password_hash = ?, name = ?, email = ?, department = ?, role = ?, preferred_model = ? WHERE id = ?', [username, hash, name, email, department, role, preferred_model, id]);
+        } else {
+            await db.run('UPDATE users SET username = ?, name = ?, email = ?, department = ?, role = ?, preferred_model = ? WHERE id = ?', [username, name, email, department, role, preferred_model, id]);
+        }
+        res.json({ success: true });
+    } catch (e) { res.status(500).json({ error: 'Update failed' }); }
+});
+
+router.delete('/admin/users/:id', async (req: Request, res: Response) => {
+    const adminId = req.headers['x-user-id'] as string;
+    const { id } = req.params;
+    try {
+        const db = getDb();
+        const admin = await db.get('SELECT role FROM users WHERE id = ?', [adminId]);
+        if (!admin || admin.role !== 'admin') return res.status(403).json({ error: 'Forbidden' });
+        await db.run('DELETE FROM users WHERE id = ?', [id]);
+        res.json({ success: true });
+    } catch (e) { res.status(500).json({ error: 'Delete failed' }); }
 });
 
 router.get('/skills', async (req: Request, res: Response) => {
@@ -372,6 +283,99 @@ router.post('/models/select', (req: Request, res: Response) => {
     const { modelName } = req.body;
     setCurrentModel(modelName);
     res.json({ currentModel: modelName });
+});
+
+router.post('/chat/stream', async (req: Request, res: Response) => {
+    const userId = req.headers['x-user-id'] as string;
+    const { message, history, model, selectedRepo, activeSkillId, attachedResources, sessionId } = req.body;
+    if (!userId) return res.status(401).json({ error: 'Unauthorized' });
+    const ghToken = await getUserCredential(userId, 'github');
+    const geminiKey = await getUserCredential(userId, 'gemini');
+    res.setHeader('Content-Type', 'text/event-stream');
+    res.setHeader('Cache-Control', 'no-cache');
+    res.setHeader('Connection', 'keep-alive');
+    try {
+        const repoContext = selectedRepo ? `Repository: ${selectedRepo.full_name}` : undefined;
+        let activeHistory: any[] = [...history]; 
+        let currentPrompt: string = message; 
+        let finalSkillId = activeSkillId;
+        if (!finalSkillId) {
+            finalSkillId = await detectSkillFromMessage(message);
+            if (finalSkillId) res.write(`data: ${JSON.stringify({ type: 'thought', content: `Auto-activating skill: ${finalSkillId}` })}\n\n`);
+        }
+        if (attachedResources?.length > 0) {
+            const resourceContents = await Promise.all(attachedResources.map(async (resObj: any) => {
+                try {
+                    let content = '';
+                    const token = ghToken || "";
+                    if (resObj.type === 'pr') content = await githubService.fetchPullRequestDiff(token, resObj.owner, resObj.repo, Number(resObj.id));
+                    else if (resObj.type === 'commit') content = await githubService.fetchCommitDiff(token, resObj.owner, resObj.repo, resObj.id);
+                    else if (resObj.type === 'file') {
+                        const data = await githubService.fetchRepoContent(token, resObj.owner, resObj.repo, resObj.id);
+                        content = data.content ? Buffer.from(data.content, 'base64').toString('utf-8') : JSON.stringify(data);
+                    } else if (resObj.type === 'folder') {
+                        const tree = await githubService.fetchFileTree(token, resObj.owner, resObj.repo);
+                        const subItems = tree.filter((f: any) => f.path.startsWith(resObj.id));
+                        content = `Structure for ${resObj.id}:\n` + subItems.map((f: any) => `- ${f.path}`).join('\n');
+                    }
+                    return `[ATTACHED ${resObj.type.toUpperCase()}: ${resObj.name}]\n${content.substring(0, 5000)}`; 
+                } catch (e) { return `[FAILED: ${resObj.name}]`; }
+            }));
+            currentPrompt = `${resourceContents.join('\n\n')}\n\n---\n\n${currentPrompt}`;
+        }
+        if (finalSkillId) {
+            const skillPath = path.join(__dirname, '../skills', finalSkillId, 'SKILL.md');
+            const skillContent = await fs.readFile(skillPath, 'utf-8');
+            currentPrompt = `<activated_skill name="${finalSkillId}">\n${skillContent}\n</activated_skill>\n\n${currentPrompt}`;
+        }
+        let iteration = 0;
+        let fullAIResponse = '';
+        while (iteration < 30) {
+            iteration++;
+            const result = await getAiChatStreamResponse(iteration === 1 ? currentPrompt : "", activeHistory, repoContext, model, geminiKey || undefined);
+            let turnText = '';
+            for await (const chunk of result.stream) {
+                const text = chunk.text();
+                if (text) { turnText += text; fullAIResponse += text; res.write(`data: ${JSON.stringify({ type: 'answer', text })}\n\n`); }
+            }
+            const response = await result.response;
+            const calls = response.functionCalls();
+            if (iteration === 1) activeHistory.push({ role: 'user', parts: [{ text: currentPrompt }] });
+            const modelParts: any[] = [];
+            if (turnText) modelParts.push({ text: turnText });
+            if (calls && Array.isArray(calls) && calls.length > 0) { calls.forEach(call => modelParts.push({ functionCall: call })); }
+            if (modelParts.length > 0) { activeHistory.push({ role: 'model', parts: modelParts }); }
+            if (!calls || calls.length === 0) break;
+            const functionResponses: any[] = [];
+            for (const call of calls) {
+                res.write(`data: ${JSON.stringify({ type: 'thought', content: `Executing ${call.name}...` })}\n\n`);
+                let toolResult: any;
+                try {
+                    const [owner, repo] = selectedRepo.full_name.split('/');
+                    const token = ghToken || "";
+                    if (call.name === 'list_files') toolResult = await githubService.fetchRepoContent(token, owner, repo, (call.args as any).path || '');
+                    else if (call.name === 'read_file') {
+                        const data = await githubService.fetchRepoContent(token, owner, repo, (call.args as any).path);
+                        toolResult = data.content ? Buffer.from(data.content, 'base64').toString('utf-8') : JSON.stringify(data);
+                    }
+                    res.write(`data: ${JSON.stringify({ type: 'thought', content: `Completed: ${call.name}` })}\n\n`);
+                } catch (e: any) { toolResult = { error: e.message }; }
+                functionResponses.push({ functionResponse: { name: call.name, response: { content: toolResult } } });
+            }
+            activeHistory.push({ role: 'function', parts: functionResponses });
+        }
+        if (sessionId) {
+            const db = getDb();
+            await db.run('INSERT INTO messages (session_id, role, content_json, timestamp) VALUES (?, ?, ?, ?)', [sessionId, 'user', JSON.stringify({ parts: [{ type: 'text', content: message }], meta: { activeSkillId, attachedResources } }), new Date()]);
+            await db.run('INSERT INTO messages (session_id, role, content_json, timestamp) VALUES (?, ?, ?, ?)', [sessionId, 'assistant', JSON.stringify({ parts: [{ type: 'text', content: fullAIResponse }] }), new Date()]);
+        }
+        res.write(`data: ${JSON.stringify({ done: true })}\n\n`);
+        res.end();
+    } catch (error: any) {
+        res.write(`data: ${JSON.stringify({ type: 'answer', text: `\n\n⚠️ 오류: ${error.message}` })}\n\n`);
+        res.write(`data: ${JSON.stringify({ done: true })}\n\n`);
+        res.end();
+    }
 });
 
 router.get('/metrics', (req: Request, res: Response) => { res.json([{ label: "SYSTEM", val: "STABLE" }]); });

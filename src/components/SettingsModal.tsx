@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { X, User, Shield, Key, Loader2, Save, Trash2, Plus, Building, Mail, Check, AlertCircle, Edit2, Github, LogOut, ExternalLink, Globe, Cpu, Database, Zap } from 'lucide-react';
+import { X, User, Shield, Key, Loader2, Save, Trash2, Plus, Building, Mail, Check, AlertCircle, Edit2, Github, LogOut, ExternalLink, Globe, Cpu, Database, Zap, Hash } from 'lucide-react';
 import { useUser } from '../context/UserContext';
 import { API_URL } from '../config';
 
@@ -22,7 +22,8 @@ const UserEditModal: React.FC<{
     mode: 'add' | 'edit';
     userData?: any;
     currentUserId: string;
-}> = ({ isOpen, onClose, onSuccess, mode, userData, currentUserId }) => {
+    availableModels: any[];
+}> = ({ isOpen, onClose, onSuccess, mode, userData, currentUserId, availableModels }) => {
     const [formData, setFormData] = useState({
         username: '',
         password: '',
@@ -30,7 +31,8 @@ const UserEditModal: React.FC<{
         name: '',
         email: '',
         department: '',
-        role: 'user'
+        role: 'user',
+        preferred_model: 'gemini-2.0-flash'
     });
     const [isLoading, setIsLoading] = useState(false);
     const [error, setError] = useState('');
@@ -44,107 +46,74 @@ const UserEditModal: React.FC<{
                 name: userData.name || '',
                 email: userData.email || '',
                 department: userData.department || '',
-                role: userData.role || 'user'
+                role: userData.role || 'user',
+                preferred_model: userData.preferred_model || 'gemini-2.0-flash'
             });
         } else {
-            setFormData({ username: '', password: '', confirmPassword: '', name: '', email: '', department: '', role: 'user' });
+            setFormData({ username: '', password: '', confirmPassword: '', name: '', email: '', department: '', role: 'user', preferred_model: 'gemini-2.0-flash' });
         }
         setError('');
     }, [mode, userData, isOpen]);
 
     const isPasswordMatched = formData.password === formData.confirmPassword;
     const canSave = mode === 'add' 
-        ? (formData.username && formData.password && isPasswordMatched && formData.name)
-        : (formData.username && formData.name && (formData.password ? isPasswordMatched : true));
+        ? (formData.username && formData.password && isPasswordMatched && formData.name && formData.email)
+        : (formData.username && formData.name && formData.email && (formData.password ? isPasswordMatched : true));
 
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
         if (!canSave) return;
-        
         setIsLoading(true);
-        setError('');
         try {
             const url = mode === 'add' ? `${API_URL}/api/admin/users` : `${API_URL}/api/admin/users/${userData.id}`;
             const method = mode === 'add' ? 'POST' : 'PUT';
             const res = await fetch(url, {
                 method,
                 headers: { 'Content-Type': 'application/json', 'x-user-id': currentUserId },
-                body: JSON.stringify({
-                    ...formData,
-                    password: formData.password || undefined
-                })
+                body: JSON.stringify({ ...formData, password: formData.password || undefined })
             });
-            const data = await res.json();
-            if (res.ok) {
-                onSuccess();
-                onClose();
-            } else { setError(data.error || '처리 중 오류가 발생했습니다.'); }
-        } catch (e) { setError('서버 통신 오류가 발생했습니다.'); } finally { setIsLoading(false); }
+            if (res.ok) { onSuccess(); onClose(); }
+            else { const data = await res.json(); setError(data.error || '처리 중 오류가 발생했습니다.'); }
+        } catch (e) { setError('서버 통신 오류'); } finally { setIsLoading(false); }
     };
 
     if (!isOpen) return null;
 
     return (
         <div className="fixed inset-0 z-[200] flex items-center justify-center bg-black/80 backdrop-blur-md p-4 animate-in fade-in duration-200">
-            <div className="w-full max-w-lg bg-slate-900 border border-white/10 rounded-3xl shadow-2xl overflow-hidden animate-in zoom-in-95 duration-200 font-sans">
+            <div className="w-full max-w-xl bg-slate-900 border border-white/10 rounded-[2.5rem] shadow-2xl overflow-hidden animate-in zoom-in-95 duration-200 font-sans">
                 <div className="p-6 border-b border-white/5 flex justify-between items-center bg-white/5">
-                    <h3 className="text-lg font-black text-white uppercase italic tracking-tight flex items-center gap-2">
-                        {mode === 'add' ? <Plus size={18} /> : <Edit2 size={18} />}
-                        {mode === 'add' ? 'Add New User' : 'Edit User Profile'}
-                    </h3>
+                    <h3 className="text-lg font-black text-white uppercase italic tracking-tight flex items-center gap-2">{mode === 'add' ? <Plus size={18} /> : <Edit2 size={18} />}{mode === 'add' ? 'Add New Member' : 'Edit Member Profile'}</h3>
                     <button onClick={onClose} className="text-slate-500 hover:text-white transition-colors"><X size={20} /></button>
                 </div>
-                <form onSubmit={handleSubmit} className="p-8 space-y-5">
-                    <div className="grid grid-cols-2 gap-4">
-                        <div className="space-y-1.5">
-                            <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest ml-1">Account ID</label>
-                            <input type="text" value={formData.username} onChange={(e) => setFormData({...formData, username: e.target.value})} disabled={mode === 'edit'} className="w-full bg-black/40 border border-white/10 rounded-xl px-4 py-2.5 text-white text-sm focus:border-cyan-500 outline-none disabled:opacity-50" placeholder="e.g. jdoe" />
-                        </div>
-                        <div className="space-y-1.5">
-                            <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest ml-1">Role</label>
-                            <select value={formData.role} onChange={(e) => setFormData({...formData, role: e.target.value as any})} className="w-full bg-black/40 border border-white/10 rounded-xl px-4 py-2.5 text-white text-sm focus:border-cyan-500 outline-none appearance-none cursor-pointer">
-                                <option value="user">USER</option>
-                                <option value="admin">ADMIN</option>
-                            </select>
-                        </div>
+                <form onSubmit={handleSubmit} className="p-10 space-y-6">
+                    <div className="grid grid-cols-2 gap-6">
+                        <div className="space-y-1.5"><label className="text-[10px] font-black text-slate-500 uppercase tracking-widest ml-1">Account ID*</label><input type="text" value={formData.username} onChange={(e) => setFormData({...formData, username: e.target.value})} disabled={mode === 'edit'} className="w-full bg-black/40 border border-white/10 rounded-xl px-4 py-2.5 text-white text-sm focus:border-cyan-500 outline-none disabled:opacity-50" placeholder="e.g. user01" /><p className="text-[9px] text-slate-600 px-1">로그인 시 사용되는 고유 식별자입니다.</p></div>
+                        <div className="space-y-1.5"><label className="text-[10px] font-black text-slate-500 uppercase tracking-widest ml-1">Role*</label><select value={formData.role} onChange={(e) => setFormData({...formData, role: e.target.value as any})} className="w-full bg-black/40 border border-white/10 rounded-xl px-4 py-2.5 text-white text-sm focus:border-cyan-500 outline-none">
+                            <option value="user">USER</option><option value="admin">ADMIN</option>
+                        </select><p className="text-[9px] text-slate-600 px-1">시스템 관리 권한 여부를 결정합니다.</p></div>
                     </div>
-                    <div className="grid grid-cols-2 gap-4">
-                        <div className="space-y-1.5">
-                            <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest ml-1">Full Name</label>
-                            <input type="text" value={formData.name} onChange={(e) => setFormData({...formData, name: e.target.value})} className="w-full bg-black/40 border border-white/10 rounded-xl px-4 py-2.5 text-white text-sm focus:border-cyan-500 outline-none" placeholder="John Doe" />
-                        </div>
-                        <div className="space-y-1.5">
-                            <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest ml-1">Department</label>
-                            <input type="text" value={formData.department} onChange={(e) => setFormData({...formData, department: e.target.value})} className="w-full bg-black/40 border border-white/10 rounded-xl px-4 py-2.5 text-white text-sm focus:border-cyan-500 outline-none" placeholder="Dev Team" />
-                        </div>
+                    <div className="grid grid-cols-2 gap-6">
+                        <div className="space-y-1.5"><label className="text-[10px] font-black text-slate-500 uppercase tracking-widest ml-1">Full Name*</label><input type="text" value={formData.name} onChange={(e) => setFormData({...formData, name: e.target.value})} className="w-full bg-black/40 border border-white/10 rounded-xl px-4 py-2.5 text-white text-sm focus:border-cyan-500 outline-none" placeholder="실명 입력" /><p className="text-[9px] text-slate-600 px-1">플랫폼 내에서 표시될 이름입니다.</p></div>
+                        <div className="space-y-1.5"><label className="text-[10px] font-black text-slate-500 uppercase tracking-widest ml-1">Department</label><input type="text" value={formData.department} onChange={(e) => setFormData({...formData, department: e.target.value})} className="w-full bg-black/40 border border-white/10 rounded-xl px-4 py-2.5 text-white text-sm focus:border-cyan-500 outline-none" placeholder="부서명" /><p className="text-[9px] text-slate-600 px-1">소속된 팀 또는 조직 정보를 입력하세요.</p></div>
                     </div>
-                    <div className="space-y-1.5">
-                        <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest ml-1">Email</label>
-                        <input type="email" value={formData.email} onChange={(e) => setFormData({...formData, email: e.target.value})} className="w-full bg-black/40 border border-white/10 rounded-xl px-4 py-2.5 text-white text-sm focus:border-cyan-500 outline-none" placeholder="john@example.com" />
+                    <div className="space-y-1.5"><label className="text-[10px] font-black text-slate-500 uppercase tracking-widest ml-1">Email Address*</label><input type="email" value={formData.email} onChange={(e) => setFormData({...formData, email: e.target.value})} className="w-full bg-black/40 border border-white/10 rounded-xl px-4 py-2.5 text-white text-sm focus:border-cyan-500 outline-none" placeholder="name@company.com" /><p className="text-[9px] text-slate-600 px-1">알림 및 연락을 위한 공식 이메일입니다.</p></div>
+                    
+                    <div className="grid grid-cols-2 gap-6">
+                        <div className="space-y-1.5"><label className="text-[10px] font-black text-slate-500 uppercase tracking-widest ml-1">{mode === 'edit' ? 'Change PW (Opt)' : 'Password*'}</label><input type="password" value={formData.password} onChange={(e) => setFormData({...formData, password: e.target.value})} className="w-full bg-black/40 border border-white/10 rounded-xl px-4 py-2.5 text-white text-sm outline-none" /></div>
+                        <div className="space-y-1.5"><label className="text-[10px] font-black text-slate-500 uppercase tracking-widest ml-1">Confirm PW</label><input type="password" value={formData.confirmPassword} onChange={(e) => setFormData({...formData, confirmPassword: e.target.value})} className={`w-full bg-black/40 border rounded-xl px-4 py-2.5 text-white text-sm outline-none ${formData.confirmPassword && !isPasswordMatched ? 'border-red-500/50' : 'border-white/10'}`} /></div>
                     </div>
-                    <div className="grid grid-cols-2 gap-4">
-                        <div className="space-y-1.5">
-                            <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest ml-1">{mode === 'edit' ? 'Change Password (Opt)' : 'Password'}</label>
-                            <div className="relative">
-                                <input type="password" value={formData.password} onChange={(e) => setFormData({...formData, password: e.target.value})} className={`w-full bg-black/40 border rounded-xl px-4 py-2.5 text-white text-sm outline-none transition-all ${formData.password && isPasswordMatched ? 'border-emerald-500/50' : 'border-white/10 focus:border-cyan-500'}`} />
-                                {formData.password && isPasswordMatched && <Check size={14} className="absolute right-3 top-1/2 -translate-y-1/2 text-emerald-500" />}
-                            </div>
-                        </div>
-                        <div className="space-y-1.5">
-                            <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest ml-1">Confirm Password</label>
-                            <div className="relative">
-                                <input type="password" value={formData.confirmPassword} onChange={(e) => setFormData({...formData, confirmPassword: e.target.value})} className={`w-full bg-black/40 border rounded-xl px-4 py-2.5 text-white text-sm outline-none transition-all ${formData.confirmPassword && !isPasswordMatched ? 'border-red-500/50' : formData.confirmPassword && isPasswordMatched ? 'border-emerald-500/50' : 'border-white/10 focus:border-cyan-500'}`} />
-                                {formData.confirmPassword && !isPasswordMatched && <AlertCircle size={14} className="absolute right-3 top-1/2 -translate-y-1/2 text-red-500" />}
-                                {formData.confirmPassword && isPasswordMatched && <Check size={14} className="absolute right-3 top-1/2 -translate-y-1/2 text-emerald-500" />}
-                            </div>
-                        </div>
-                    </div>
+
+                    <div className="space-y-1.5"><label className="text-[10px] font-black text-slate-500 uppercase tracking-widest ml-1">Preferred AI Model</label><select value={formData.preferred_model} onChange={(e) => setFormData({...formData, preferred_model: e.target.value})} className="w-full bg-black/40 border border-white/10 rounded-xl px-4 py-2.5 text-white text-sm outline-none">
+                        {availableModels.map(m => <option key={m.name} value={m.name}>{m.name}</option>)}
+                    </select><p className="text-[9px] text-slate-600 px-1">로그인 시 이 사용자에게 자동으로 적용될 기본 AI 엔진입니다.</p></div>
+
                     {error && <div className="p-3 bg-red-500/10 border border-red-500/20 rounded-xl text-red-400 text-xs font-bold flex items-center gap-2"><AlertCircle size={14} /> {error}</div>}
                     <div className="pt-4 flex gap-3">
                         <button type="button" onClick={onClose} className="flex-1 px-4 py-3 bg-white/5 hover:bg-white/10 text-white rounded-2xl text-xs font-black uppercase transition-all">Cancel</button>
                         <button type="submit" disabled={isLoading || !canSave} className="flex-2 px-8 py-3 bg-cyan-500 text-slate-950 rounded-2xl text-xs font-black uppercase hover:bg-white transition-all disabled:opacity-30 flex items-center justify-center gap-2 shadow-glow">
                             {isLoading ? <Loader2 size={16} className="animate-spin" /> : <Save size={16} />}
-                            {mode === 'add' ? 'Create User' : 'Save Changes'}
+                            {mode === 'add' ? 'Create Member' : 'Apply Changes'}
                         </button>
                     </div>
                 </form>
@@ -161,31 +130,43 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose, c
     const [isLoading, setIsLoading] = useState(false);
     const [statusMsg, setStatusMsg] = useState({ type: '', text: '' });
 
-    // Profile State
-    const [profileForm, setProfileForm] = useState({ name: '', email: '', dept: '', newPw: '', confirmPw: '' });
-    
-    // Credentials State
+    // State
+    const [profileForm, setProfileForm] = useState({ name: '', email: '', dept: '', newPw: '', confirmPw: '', preferred_model: '' });
     const [credStatus, setCredStatus] = useState<any>({ github: false, gemini: false });
     const [ghToken, setGhToken] = useState('');
     const [geminiKey, setGeminiKey] = useState('');
     const [isVerifying, setIsVerifying] = useState(false);
     const [publicRepoUrl, setPublicRepoUrl] = useState('');
     const [publicRepos, setPublicRepos] = useState<string[]>([]);
-    
-    // Admin State
     const [users, setUsers] = useState<any[]>([]);
     const [isAdminLoading, setIsAdminLoading] = useState(false);
+    const [models, setModels] = useState<any[]>([]); // 가용 모델 목록
+
+    // User Edit Modal State
     const [isUserModalOpen, setIsUserModalOpen] = useState(false);
     const [userModalMode, setUserModalMode] = useState<'add' | 'edit'>('add');
     const [selectedUser, setSelectedUser] = useState<any>(null);
 
     useEffect(() => {
         if (isOpen && user) {
-            setProfileForm({ name: user.name || '', email: user.email || '', dept: user.department || '', newPw: '', confirmPw: '' });
-            if (activeTab === 'Credentials') { fetchCredentials(); fetchPublicRepos(); }
+            setProfileForm({ 
+                name: user.name || '', email: user.email || '', dept: user.department || '', 
+                newPw: '', confirmPw: '', preferred_model: user.preferred_model || 'gemini-2.0-flash' 
+            });
+            fetchCredentials();
+            fetchPublicRepos();
+            fetchModels();
             if (activeTab === 'Admin' && user.role === 'admin') fetchUsers();
         }
     }, [isOpen, activeTab, user]);
+
+    const fetchModels = async () => {
+        try {
+            const res = await fetch(`${API_URL}/api/models`, { headers: { 'x-user-id': user?.id || '' } });
+            const data = await res.json();
+            if (data.models) setModels(data.models);
+        } catch (e) {}
+    };
 
     const fetchCredentials = async () => {
         try {
@@ -220,13 +201,15 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose, c
             const res = await fetch(`${API_URL}/api/me`, {
                 method: 'PUT',
                 headers: { 'Content-Type': 'application/json', 'x-user-id': user?.id || '' },
-                body: JSON.stringify({ name: profileForm.name, email: profileForm.email, department: profileForm.dept, password: profileForm.newPw || undefined })
+                body: JSON.stringify({ ...profileForm, password: profileForm.newPw || undefined })
             });
             if (res.ok) {
-                setStatusMsg({ type: 'success', text: '프로필이 업데이트되었습니다.' });
-                updateLocalUser({ name: profileForm.name, email: profileForm.email, department: profileForm.dept });
+                setStatusMsg({ type: 'success', text: '프로필 및 선호 설정이 저장되었습니다.' });
+                updateLocalUser({ name: profileForm.name, email: profileForm.email, department: profileForm.dept, preferred_model: profileForm.preferred_model });
+                // 선호 모델이 바뀌었으면 즉시 시스템에 적용
+                if (profileForm.preferred_model) await refreshModels();
             }
-        } catch (e) { setStatusMsg({ type: 'error', text: '통신 오류' }); } finally { setIsLoading(false); }
+        } catch (e) { setStatusMsg({ type: 'error', text: '서버 통신 오류' }); } finally { setIsLoading(false); }
     };
 
     const handleSaveCred = async (serviceName: string, token: string) => {
@@ -239,36 +222,22 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose, c
                 headers: { 'Content-Type': 'application/json', 'x-user-id': user?.id || '' },
                 body: JSON.stringify({ serviceName, token })
             });
-            const data = await res.json();
             if (res.ok) {
-                setStatusMsg({ type: 'success', text: `${serviceName.toUpperCase()} 연동이 완료되었습니다.` });
+                setStatusMsg({ type: 'success', text: `${serviceName.toUpperCase()} 연동 성공.` });
                 if (serviceName === 'github') setGhToken(''); else setGeminiKey('');
                 fetchCredentials();
                 if (serviceName === 'gemini') await refreshModels();
-            } else { setStatusMsg({ type: 'error', text: data.error || '연동 실패' }); }
-        } catch (e) { setStatusMsg({ type: 'error', text: '서버 통신 오류' }); } finally { setIsLoading(false); setIsVerifying(false); }
+            } else { const data = await res.json(); setStatusMsg({ type: 'error', text: data.error || '연동 실패' }); }
+        } catch (e) { setStatusMsg({ type: 'error', text: '통신 오류' }); } finally { setIsLoading(false); setIsVerifying(false); }
     };
 
     const handleAddPublicRepo = async () => {
         if (!publicRepoUrl) return;
         setIsLoading(true);
         try {
-            const res = await fetch(`${API_URL}/api/github/public-repos`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json', 'x-user-id': user?.id || '' },
-                body: JSON.stringify({ repoUrl: publicRepoUrl })
-            });
-            if (res.ok) { setStatusMsg({ type: 'success', text: '공개 저장소가 등록되었습니다.' }); setPublicRepoUrl(''); fetchPublicRepos(); }
-            else { const data = await res.json(); setStatusMsg({ type: 'error', text: data.error || '등록 실패' }); }
+            const res = await fetch(`${API_URL}/api/github/public-repos`, { method: 'POST', headers: { 'Content-Type': 'application/json', 'x-user-id': user?.id || '' }, body: JSON.stringify({ repoUrl: publicRepoUrl }) });
+            if (res.ok) { setStatusMsg({ type: 'success', text: '공개 저장소 등록됨.' }); setPublicRepoUrl(''); fetchPublicRepos(); }
         } catch (e) {} finally { setIsLoading(false); }
-    };
-
-    const handleDeletePublicRepo = async (ownerRepo: string) => {
-        const [owner, repo] = ownerRepo.split('/');
-        try {
-            const res = await fetch(`${API_URL}/api/github/public-repos/${owner}/${repo}`, { method: 'DELETE', headers: { 'x-user-id': user?.id || '' } });
-            if (res.ok) fetchPublicRepos();
-        } catch (e) {}
     };
 
     const handleDeleteUser = async (targetId: string) => {
@@ -286,11 +255,11 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose, c
 
     return (
         <div className="fixed inset-0 z-[150] flex items-center justify-center bg-black/60 backdrop-blur-sm p-4 animate-in fade-in duration-200">
-            <div className="w-full max-w-5xl h-[700px] bg-slate-900 border border-white/10 rounded-[2.5rem] shadow-2xl flex overflow-hidden animate-in zoom-in-95 duration-200 font-sans relative">
+            <div className="w-full max-w-5xl h-[750px] bg-slate-900 border border-white/10 rounded-[2.5rem] shadow-2xl flex overflow-hidden animate-in zoom-in-95 duration-200 font-sans relative">
                 
                 <div className="w-64 bg-black/20 border-r border-white/5 p-8 flex flex-col gap-2 shrink-0">
                     <div className="mb-10 px-2"><h2 className="text-2xl font-black text-white tracking-tighter italic uppercase flex items-center gap-2">Settings</h2><div className="h-1 w-12 bg-cyan-500 rounded-full mt-2" /></div>
-                    <button onClick={() => setActiveTab('Profile')} className={`flex items-center gap-3 px-5 py-3.5 rounded-2xl text-xs font-black uppercase tracking-widest transition-all ${activeTab === 'Profile' ? 'bg-white text-slate-950' : 'text-slate-500 hover:text-white hover:bg-white/5'}`}><User size={16} /> Profile</button>
+                    <button onClick={() => setActiveTab('Profile')} className={`flex items-center gap-3 px-5 py-3.5 rounded-2xl text-xs font-black uppercase tracking-widest transition-all ${activeTab === 'Profile' ? 'bg-white text-slate-950' : 'text-slate-500 hover:text-white hover:bg-white/5'}`}><User size={16} /> My Profile</button>
                     <button onClick={() => setActiveTab('Credentials')} className={`flex items-center gap-3 px-5 py-3.5 rounded-2xl text-xs font-black uppercase tracking-widest transition-all ${activeTab === 'Credentials' ? 'bg-white text-slate-950' : 'text-slate-500 hover:text-white hover:bg-white/5'}`}><Key size={16} /> Credentials</button>
                     {user?.role === 'admin' && (
                         <button onClick={() => setActiveTab('Admin')} className={`flex items-center gap-3 px-5 py-3.5 rounded-2xl text-xs font-black uppercase tracking-widest transition-all ${activeTab === 'Admin' ? 'bg-amber-500 text-slate-950 shadow-glow' : 'text-slate-500 hover:text-white hover:bg-white/5'}`}><Shield size={16} /> 계정관리</button>
@@ -300,24 +269,28 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose, c
 
                 <div className="flex-1 flex flex-col overflow-hidden bg-slate-900/50 relative">
                     <div className="flex-1 overflow-y-auto p-12 custom-scrollbar">
+                        
                         {activeTab === 'Profile' && (
                             <form onSubmit={handleUpdateProfile} className="max-w-xl space-y-10 animate-in slide-in-from-right-4 duration-300">
                                 <div><h3 className="text-3xl font-black text-white mb-2 uppercase italic tracking-tighter">My Identity</h3><p className="text-sm text-slate-500 font-light">당신의 개인 프로필과 접속 권한을 최신화하세요.</p></div>
                                 <div className="space-y-6">
                                     <div className="grid grid-cols-2 gap-6">
-                                        <div className="space-y-2"><label className="text-[10px] font-black text-slate-500 uppercase tracking-[0.2em] ml-1">Account ID</label><input type="text" value={user?.username} disabled className="w-full bg-black/30 border border-white/5 rounded-2xl px-5 py-4 text-slate-500 font-mono text-sm cursor-not-allowed" /></div>
-                                        <div className="space-y-2"><label className="text-[10px] font-black text-slate-500 uppercase tracking-[0.2em] ml-1">Full Name</label><input type="text" value={profileForm.name} onChange={(e) => setProfileForm({...profileForm, name: e.target.value})} className="w-full bg-white/5 border border-white/10 rounded-2xl px-5 py-4 text-white text-sm focus:border-cyan-500 transition-all outline-none" /></div>
+                                        <div className="space-y-1.5"><label className="text-[10px] font-black text-slate-500 uppercase tracking-widest ml-1">Account ID*</label><input type="text" value={user?.username} disabled className="w-full bg-black/30 border border-white/5 rounded-2xl px-5 py-4 text-slate-500 font-mono text-sm cursor-not-allowed" /><p className="text-[9px] text-slate-600 px-1">아이디는 변경할 수 없습니다.</p></div>
+                                        <div className="space-y-1.5"><label className="text-[10px] font-black text-slate-500 uppercase tracking-widest ml-1">Full Name*</label><input type="text" value={profileForm.name} onChange={(e) => setProfileForm({...profileForm, name: e.target.value})} className="w-full bg-white/5 border border-white/10 rounded-2xl px-5 py-4 text-white text-sm focus:border-cyan-500 transition-all outline-none" /><p className="text-[9px] text-slate-600 px-1">서비스 내에서 표시될 실명을 입력하세요.</p></div>
                                     </div>
                                     <div className="grid grid-cols-2 gap-6">
-                                        <div className="space-y-2"><label className="text-[10px] font-black text-slate-500 uppercase tracking-[0.2em] ml-1">Email</label><input type="email" value={profileForm.email} onChange={(e) => setProfileForm({...profileForm, email: e.target.value})} className="w-full bg-white/5 border border-white/10 rounded-2xl px-5 py-4 text-white text-sm focus:border-cyan-500 transition-all outline-none" /></div>
-                                        <div className="space-y-2"><label className="text-[10px] font-black text-slate-500 uppercase tracking-[0.2em] ml-1">Department</label><input type="text" value={profileForm.dept} onChange={(e) => setProfileForm({...profileForm, dept: e.target.value})} className="w-full bg-white/5 border border-white/10 rounded-2xl px-5 py-4 text-white text-sm focus:border-cyan-500 transition-all outline-none" /></div>
+                                        <div className="space-y-1.5"><label className="text-[10px] font-black text-slate-500 uppercase tracking-widest ml-1">Email*</label><input type="email" value={profileForm.email} onChange={(e) => setProfileForm({...profileForm, email: e.target.value})} className="w-full bg-white/5 border border-white/10 rounded-2xl px-5 py-4 text-white text-sm focus:border-cyan-500 transition-all outline-none" /><p className="text-[9px] text-slate-600 px-1">연락 가능한 업무용 이메일 주소입니다.</p></div>
+                                        <div className="space-y-1.5"><label className="text-[10px] font-black text-slate-500 uppercase tracking-widest ml-1">Department</label><input type="text" value={profileForm.dept} onChange={(e) => setProfileForm({...profileForm, dept: e.target.value})} className="w-full bg-white/5 border border-white/10 rounded-2xl px-5 py-4 text-white text-sm focus:border-cyan-500 transition-all outline-none" /><p className="text-[9px] text-slate-600 px-1">소속된 팀 또는 부서 정보입니다. (선택)</p></div>
                                     </div>
-                                    <div className="grid grid-cols-2 gap-6 pt-4">
-                                        <div className="space-y-2"><label className="text-[10px] font-black text-slate-500 uppercase tracking-[0.2em] ml-1">New PW</label><input type="password" value={profileForm.newPw} onChange={(e) => setProfileForm({...profileForm, newPw: e.target.value})} className="w-full bg-white/5 border border-white/10 rounded-2xl px-5 py-4 text-white text-sm focus:border-cyan-500 transition-all outline-none" placeholder="Change?" /></div>
-                                        <div className="space-y-2"><label className="text-[10px] font-black text-slate-500 uppercase tracking-[0.2em] ml-1">Confirm</label><input type="password" value={profileForm.confirmPw} onChange={(e) => setProfileForm({...profileForm, confirmPw: e.target.value})} className={`w-full bg-white/5 border rounded-2xl px-5 py-4 text-white text-sm focus:border-cyan-500 outline-none ${profileForm.confirmPw && profileForm.newPw !== profileForm.confirmPw ? 'border-red-500/50' : 'border-white/10'}`} /></div>
+                                    <div className="grid grid-cols-2 gap-6 pt-4 border-t border-white/5 mt-4">
+                                        <div className="space-y-1.5"><label className="text-[10px] font-black text-slate-500 uppercase tracking-widest ml-1">New PW</label><input type="password" value={profileForm.newPw} onChange={(e) => setProfileForm({...profileForm, newPw: e.target.value})} className="w-full bg-white/5 border border-white/10 rounded-2xl px-5 py-4 text-white text-sm focus:border-cyan-500 transition-all outline-none" placeholder="비밀번호 변경 시 입력" /></div>
+                                        <div className="space-y-1.5"><label className="text-[10px] font-black text-slate-500 uppercase tracking-widest ml-1">Confirm PW</label><input type="password" value={profileForm.confirmPw} onChange={(e) => setProfileForm({...profileForm, confirmPw: e.target.value})} className={`w-full bg-white/5 border rounded-2xl px-5 py-4 text-white text-sm focus:border-cyan-500 outline-none ${profileForm.confirmPw && profileForm.newPw !== profileForm.confirmPw ? 'border-red-500/50' : 'border-white/10'}`} /></div>
                                     </div>
+                                    <div className="space-y-1.5"><label className="text-[10px] font-black text-slate-500 uppercase tracking-widest ml-1">Preferred AI Model</label><select value={profileForm.preferred_model} onChange={(e) => setProfileForm({...profileForm, preferred_model: e.target.value})} className="w-full bg-white/5 border border-white/10 rounded-2xl px-5 py-4 text-white text-sm outline-none appearance-none cursor-pointer focus:border-cyan-500">
+                                        {models.map(m => <option key={m.name} value={m.name}>{m.name}</option>)}
+                                    </select><p className="text-[9px] text-slate-600 px-1">로그인 시 자동으로 선택될 나만의 기본 AI 엔진입니다.</p></div>
                                 </div>
-                                <button type="submit" disabled={isLoading} className="flex items-center justify-center gap-3 w-full bg-cyan-500 text-slate-950 font-black py-5 rounded-3xl hover:bg-white transition-all shadow-glow"><Save size={20} /> Update Profile Info</button>
+                                <button type="submit" disabled={isLoading} className="flex items-center justify-center gap-3 w-full bg-cyan-500 text-slate-950 font-black py-5 rounded-3xl hover:bg-white transition-all shadow-glow"><Save size={20} /> Sync Profile & Preferences</button>
                             </form>
                         )}
 
@@ -355,12 +328,13 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose, c
                                 </div>
                                 <div className="bg-black/20 border border-white/5 rounded-[2rem] overflow-hidden">
                                     <table className="w-full text-left border-collapse">
-                                        <thead className="bg-white/5 text-[10px] font-black text-slate-500 uppercase tracking-[0.2em]"><tr className="border-b border-white/5"><th className="px-8 py-6">User Identity</th><th className="px-8 py-6">Role / Dept</th><th className="px-8 py-6 text-right">Actions</th></tr></thead>
+                                        <thead className="bg-white/5 text-[10px] font-black text-slate-500 uppercase tracking-[0.2em]"><tr className="border-b border-white/5"><th className="px-8 py-6">User Identity</th><th className="px-8 py-6">Name / Dept</th><th className="px-8 py-6">Email</th><th className="px-8 py-6 text-right">Actions</th></tr></thead>
                                         <tbody className="text-xs">
                                             {users.map(u => (
                                                 <tr key={u.id} className="border-b border-white/5 hover:bg-white/[0.02] transition-colors group/row">
                                                     <td className="px-8 py-5"><div className="font-black text-slate-200">{u.name}</div><div className="text-[10px] text-cyan-500 font-mono mt-0.5">{u.username}</div></td>
                                                     <td className="px-8 py-5"><div className="flex items-center gap-2"><span className={`px-2 py-0.5 rounded text-[9px] font-black uppercase ${u.role === 'admin' ? 'bg-amber-500 text-slate-950' : 'bg-white/10 text-slate-400'}`}>{u.role}</span><span className="text-[10px] text-slate-500 font-bold uppercase">{u.department || '-'}</span></div></td>
+                                                    <td className="px-8 py-5 text-slate-400 font-medium">{u.email || '-'}</td>
                                                     <td className="px-8 py-5 text-right opacity-0 group-hover/row:opacity-100 transition-all">
                                                         <div className="flex justify-end gap-1">
                                                             <button onClick={() => openEditUser(u)} className="p-2 text-slate-500 hover:text-white hover:bg-white/5 rounded-lg transition-all"><Edit2 size={14} /></button>
@@ -392,6 +366,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose, c
                 mode={userModalMode}
                 userData={selectedUser}
                 currentUserId={user?.id || ''}
+                availableModels={models}
             />
         </div>
     );
