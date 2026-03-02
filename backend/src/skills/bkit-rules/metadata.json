@@ -1,0 +1,12 @@
+{
+  "id": "bkit-rules",
+  "name": "bkit-rules",
+  "description": "Specialized intelligence for bkit-rules",
+  "triggers": [
+    "규칙",
+    "규격",
+    "원칙",
+    "standard",
+    "rules"
+  ]
+}

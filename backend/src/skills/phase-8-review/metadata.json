@@ -1,0 +1,11 @@
+{
+  "id": "phase-8-review",
+  "name": "phase-8-review",
+  "description": "Specialized intelligence for phase-8-review",
+  "triggers": [
+    "리뷰",
+    "점검",
+    "review",
+    "검토"
+  ]
+}

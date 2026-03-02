@@ -1,0 +1,11 @@
+{
+  "id": "phase-7-seo-security",
+  "name": "phase-7-seo-security",
+  "description": "Specialized intelligence for phase-7-seo-security",
+  "triggers": [
+    "seo",
+    "검색 최적화",
+    "보안 강화",
+    "hardening"
+  ]
+}

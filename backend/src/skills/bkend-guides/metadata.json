@@ -1,0 +1,12 @@
+{
+  "id": "bkend-guides",
+  "name": "bkend-guides",
+  "description": "Specialized intelligence for bkend-guides",
+  "triggers": [
+    "가이드",
+    "문제해결",
+    "troubleshoot",
+    "faq",
+    "성능"
+  ]
+}

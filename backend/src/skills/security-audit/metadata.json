@@ -1,0 +1,11 @@
+{
+  "id": "security-audit",
+  "name": "Security Audit",
+  "description": "Expert security vulnerability analysis",
+  "triggers": [
+    "보안",
+    "취약점",
+    "audit",
+    "security"
+  ]
+}

@@ -1,0 +1,11 @@
+{
+  "id": "codebase-analyzer",
+  "name": "codebase-analyzer",
+  "description": "Specialized intelligence for codebase-analyzer",
+  "triggers": [
+    "코드 분석",
+    "구조 파악",
+    "분석",
+    "analyzer"
+  ]
+}

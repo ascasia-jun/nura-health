@@ -1,0 +1,12 @@
+{
+  "id": "desktop-app",
+  "name": "desktop-app",
+  "description": "Specialized intelligence for desktop-app",
+  "triggers": [
+    "데스크톱",
+    "pc",
+    "desktop",
+    "electron",
+    "tauri"
+  ]
+}

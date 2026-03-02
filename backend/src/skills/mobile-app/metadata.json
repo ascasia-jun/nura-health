@@ -1,0 +1,13 @@
+{
+  "id": "mobile-app",
+  "name": "mobile-app",
+  "description": "Specialized intelligence for mobile-app",
+  "triggers": [
+    "모바일",
+    "앱",
+    "mobile",
+    "ios",
+    "android",
+    "react native"
+  ]
+}

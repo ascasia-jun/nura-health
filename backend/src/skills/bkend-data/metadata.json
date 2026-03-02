@@ -1,0 +1,13 @@
+{
+  "id": "bkend-data",
+  "name": "bkend-data",
+  "description": "Specialized intelligence for bkend-data",
+  "triggers": [
+    "데이터",
+    "테이블",
+    "쿼리",
+    "db",
+    "crud",
+    "data"
+  ]
+}

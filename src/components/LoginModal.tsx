@@ -18,6 +18,8 @@ export const LoginModal: React.FC<LoginModalProps> = ({ isOpen, onClose }) => {
     const handleSubmit = (e: React.FormEvent) => {
         e.preventDefault();
         if (login(id, pw)) {
+            // 로그인 성공 시 챗옵스로 즉시 이동
+            window.location.hash = '#chatops';
             onClose();
             setId('');
             setPw('');
@@ -39,7 +41,7 @@ export const LoginModal: React.FC<LoginModalProps> = ({ isOpen, onClose }) => {
 
                 <div className="text-center mb-8">
                     <h2 className="text-2xl font-bold text-white mb-2">System Access</h2>
-                    <p className="text-slate-400 text-sm">AI-DLC 플랫폼에 로그인하세요.</p>
+                    <p className="text-slate-400 text-sm">RepoInsight 플랫폼에 로그인하세요.</p>
                 </div>
 
                 <form onSubmit={handleSubmit} className="space-y-6">
@@ -52,7 +54,7 @@ export const LoginModal: React.FC<LoginModalProps> = ({ isOpen, onClose }) => {
                                 value={id}
                                 onChange={(e) => setId(e.target.value)}
                                 className="w-full bg-slate-800/50 border border-slate-700 rounded-lg py-3 pl-10 pr-4 text-white focus:outline-none focus:border-cyan-500 transition-colors"
-                                placeholder="Enter ID"
+                                placeholder="Enter ID (hint: admin)"
                             />
                         </div>
                     </div>
@@ -79,7 +81,7 @@ export const LoginModal: React.FC<LoginModalProps> = ({ isOpen, onClose }) => {
                         type="submit"
                         className="w-full bg-cyan-500 text-slate-900 font-bold py-3 rounded-lg hover:bg-cyan-400 transition-colors shadow-[0_0_15px_rgba(6,182,212,0.3)]"
                     >
-                        Initialize Session
+                        Initialize Analysis Session
                     </button>
                 </form>
             </div>

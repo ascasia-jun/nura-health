@@ -11,10 +11,10 @@ import { ProcessNode } from './Chat/ProcessNode';
 if (!CHAT_MODULE_LOADED) console.warn('Chat types module not loaded properly');
 
 /**
- * 랜딩 페이지에서 제공되는 소형 AI 어시스턴트 위젯입니다.
+ * RepoInsight 전용 AI 어시스턴트 위젯
+ * 모든 사용자가 즉시 테스트 가능하도록 개방되었습니다.
  */
 export const AICompanionChat: React.FC = () => {
-    const { tier } = useUser();
     const [isOpen, setIsOpen] = useState(false);
     const [messages, setMessages] = useState<Message[]>([
         { 
@@ -29,9 +29,6 @@ export const AICompanionChat: React.FC = () => {
     const messagesEndRef = useRef<HTMLDivElement>(null);
     const isProcessingRef = useRef<boolean>(false);
 
-    // Apex 등급 사용자만 사용 가능
-    const isLocked = tier !== 'Apex';
-
     const scrollToBottom = () => {
         messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
     };
@@ -40,7 +37,6 @@ export const AICompanionChat: React.FC = () => {
         scrollToBottom();
     }, [messages, isOpen]);
 
-    /** 대화 내역을 초기화합니다. */
     const resetChat = () => {
         setMessages([{ 
             id: 'reset',
@@ -50,7 +46,6 @@ export const AICompanionChat: React.FC = () => {
         }]);
     };
 
-    /** AI에게 메시지를 전송하고 스트리밍 응답을 수신합니다. */
     const handleSendMessage = async () => {
         const trimmed = inputValue.trim();
         if (!trimmed || isLoading || isProcessingRef.current) return;
@@ -59,24 +54,12 @@ export const AICompanionChat: React.FC = () => {
             isProcessingRef.current = true;
             setInputValue('');
             
-            const userMsg: Message = {
-                id: Date.now().toString(),
-                role: 'user',
-                parts: [{ type: 'text', content: trimmed }],
-                timestamp: new Date()
-            };
-
-            const aiMsg: Message = {
-                id: (Date.now() + 1).toString(),
-                role: 'assistant',
-                parts: [],
-                timestamp: new Date()
-            };
+            const userMsg: Message = { id: Date.now().toString(), role: 'user', parts: [{ type: 'text', content: trimmed }], timestamp: new Date() };
+            const aiMsg: Message = { id: (Date.now() + 1).toString(), role: 'assistant', parts: [], timestamp: new Date() };
 
             setMessages(prev => [...prev, userMsg, aiMsg]);
             setIsLoading(true);
 
-            // 히스토리 구성 (최근 10턴, parts 널 체크 강화)
             let history = messages
                 .filter(m => (m.parts || []).some(p => p.type === 'text' && p.content.trim() !== ''))
                 .slice(-10)
@@ -90,7 +73,11 @@ export const AICompanionChat: React.FC = () => {
             const response = await fetch(API_ENDPOINTS.CHAT_STREAM, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ message: trimmed, history }),
+                body: JSON.stringify({ 
+                    message: trimmed, 
+                    history,
+                    model: 'gemini-2.5-flash' // [상향] 최신 모델 적용
+                }),
             });
 
             if (!response.ok) throw new Error('스트리밍 요청 실패');
@@ -103,7 +90,6 @@ export const AICompanionChat: React.FC = () => {
                 while (true) {
                     const { done, value } = await reader.read();
                     if (done) break;
-
                     lineBuffer += decoder.decode(value, { stream: true });
                     const lines = lineBuffer.split('\n');
                     lineBuffer = lines.pop() || '';
@@ -134,11 +120,8 @@ export const AICompanionChat: React.FC = () => {
                                             last.parts.push({ type: 'text', content });
                                         }
                                     } else {
-                                        // [지능형 갱신] 역순 탐색하여 완료되지 않은 가장 최근의 thought 파트 찾기
                                         const targetPart = [...last.parts].reverse().find(p => 
-                                            p.type === 'thought' && 
-                                            !p.content?.startsWith('Completed:') && 
-                                            !p.content?.startsWith('Failed:')
+                                            p.type === 'thought' && !p.content?.startsWith('Completed:') && !p.content?.startsWith('Failed:')
                                         );
                                         if (targetPart && (content.startsWith('Completed:') || content.startsWith('Failed:') || content.includes('Analyzing'))) {
                                             targetPart.content = content;
@@ -173,10 +156,11 @@ export const AICompanionChat: React.FC = () => {
         return (
             <button
                 onClick={() => setIsOpen(true)}
-                className="fixed bottom-8 right-8 z-50 bg-cyan-500 text-slate-950 p-4 rounded-full shadow-[0_0_20px_rgba(6,182,212,0.5)] hover:scale-110 transition-transform duration-300 flex items-center gap-2 font-bold border border-white/10"
+                className="fixed bottom-8 right-8 z-50 bg-cyan-500 text-slate-950 p-4 rounded-full shadow-[0_0_30px_rgba(6,182,212,0.5)] hover:scale-110 transition-all duration-300 flex items-center gap-2 font-bold border border-white/10 group"
             >
-                {isLocked ? <Lock size={24} /> : <MessageSquare size={24} />}
-                <span className="hidden md:inline">RepoInsight AI</span>
+                <div className="absolute inset-0 bg-white/20 rounded-full scale-0 group-hover:scale-100 transition-transform duration-500" />
+                <MessageSquare size={24} className="relative z-10" />
+                <span className="hidden md:inline relative z-10">RepoInsight AI</span>
             </button>
         );
     }
@@ -188,15 +172,11 @@ export const AICompanionChat: React.FC = () => {
                 <div className="flex items-center gap-2 text-slate-100 font-sans font-semibold">
                     <Bot size={20} className="text-cyan-400" />
                     <span>RepoInsight Assistant</span>
-                    <span className="text-[10px] bg-cyan-500/20 text-cyan-400 px-1.5 py-0.5 rounded border border-cyan-500/30 font-mono uppercase tracking-tighter">Intelligent</span>
+                    <span className="text-[10px] bg-cyan-500/20 text-cyan-400 px-1.5 py-0.5 rounded border border-cyan-500/30 font-mono uppercase tracking-tighter">Live</span>
                 </div>
                 <div className="flex items-center gap-3">
-                    <button onClick={resetChat} title="대화 초기화" className="text-slate-400 hover:text-white transition-colors">
-                        <RotateCcw size={16} />
-                    </button>
-                    <button onClick={() => setIsOpen(false)} className="text-slate-400 hover:text-white transition-colors">
-                        <Minimize2 size={18} />
-                    </button>
+                    <button onClick={resetChat} title="대화 초기화" className="text-slate-400 hover:text-white transition-colors"><RotateCcw size={16} /></button>
+                    <button onClick={() => setIsOpen(false)} className="text-slate-400 hover:text-white transition-colors"><Minimize2 size={18} /></button>
                 </div>
             </div>
 
@@ -205,14 +185,10 @@ export const AICompanionChat: React.FC = () => {
                 {messages.map((msg, idx) => (
                     <div key={idx} className={`flex gap-3 ${msg.role === 'user' ? 'flex-row-reverse' : ''}`}>
                         {msg.role === 'assistant' && (msg.parts?.length || 0) > 0 && (
-                            <div className="w-8 h-8 rounded-full flex items-center justify-center shrink-0 border mt-1 bg-cyan-500/10 text-cyan-400 border-cyan-500/20">
-                                <Bot size={16} />
-                            </div>
+                            <div className="w-8 h-8 rounded-full flex items-center justify-center shrink-0 border mt-1 bg-cyan-500/10 text-cyan-400 border-cyan-500/20"><Bot size={16} /></div>
                         )}
                         {msg.role === 'user' && (
-                            <div className="w-8 h-8 rounded-full flex items-center justify-center shrink-0 border mt-1 bg-white/5 text-slate-400 border-white/10">
-                                <User size={16} />
-                            </div>
+                            <div className="w-8 h-8 rounded-full flex items-center justify-center shrink-0 border mt-1 bg-white/5 text-slate-400 border-white/10"><User size={16} /></div>
                         )}
                         <div className={`max-w-[85%] flex flex-col gap-1 ${msg.role === 'user' ? 'items-end' : ''}`}>
                             {msg.parts?.map((part, pIdx) => (
@@ -225,12 +201,9 @@ export const AICompanionChat: React.FC = () => {
                         </div>
                     </div>
                 ))}
-                
                 {isLoading && (messages[messages.length - 1]?.parts || []).length === 0 && (
                     <div className="flex gap-3">
-                        <div className="w-8 h-8 rounded-full bg-cyan-500/10 text-cyan-400 flex items-center justify-center shrink-0 border border-cyan-500/20">
-                            <Bot size={16} />
-                        </div>
+                        <div className="w-8 h-8 rounded-full bg-cyan-500/10 text-cyan-400 flex items-center justify-center shrink-0 border border-cyan-500/20"><Bot size={16} /></div>
                         <div className="bg-slate-800/50 border border-white/5 rounded-2xl rounded-tl-none p-4 flex items-center gap-1">
                             <div className="w-2 h-2 bg-cyan-400 rounded-full animate-bounce" style={{ animationDelay: '0ms' }} />
                             <div className="w-2 h-2 bg-cyan-400 rounded-full animate-bounce" style={{ animationDelay: '150ms' }} />
@@ -243,27 +216,20 @@ export const AICompanionChat: React.FC = () => {
 
             {/* 입력 영역 */}
             <div className="p-4 bg-white/5 border-t border-white/5">
-                {isLocked ? (
-                    <div className="text-center py-2">
-                        <p className="text-slate-400 text-xs mb-2">Apex 멤버십 전용 기능입니다.</p>
-                        <a href="#pricing" onClick={() => setIsOpen(false)} className="text-cyan-400 text-xs font-bold hover:underline">멤버십 업그레이드</a>
-                    </div>
-                ) : (
-                    <div className="relative">
-                        <textarea
-                            value={inputValue}
-                            onChange={(e) => setInputValue(e.target.value)}
-                            onKeyDown={handleKeyDown}
-                            placeholder="메시지를 입력하세요..."
-                            className="w-full bg-black/40 text-white text-sm rounded-xl pl-4 pr-12 py-3 border border-white/10 focus:outline-none focus:border-cyan-500/50 focus:ring-1 focus:ring-cyan-500/50 transition-all placeholder:text-white/20 resize-none max-h-32 min-h-[46px] custom-scrollbar"
-                            disabled={isLoading}
-                            rows={1}
-                        />
-                        <button onClick={handleSendMessage} disabled={!inputValue.trim() || isLoading} className={`absolute right-2 bottom-2 p-2 rounded-lg transition-all ${!inputValue.trim() || isLoading ? 'text-white/10' : 'text-cyan-400 hover:bg-cyan-500/10'}`}>
-                            <Send size={18} />
-                        </button>
-                    </div>
-                )}
+                <div className="relative">
+                    <textarea
+                        value={inputValue}
+                        onChange={(e) => setInputValue(e.target.value)}
+                        onKeyDown={handleKeyDown}
+                        placeholder="RepoInsight에게 질문하세요..."
+                        className="w-full bg-black/40 text-white text-sm rounded-xl pl-4 pr-12 py-3 border border-white/10 focus:outline-none focus:border-cyan-500/50 focus:ring-1 focus:ring-cyan-500/50 transition-all placeholder:text-white/20 resize-none max-h-32 min-h-[46px] custom-scrollbar"
+                        disabled={isLoading}
+                        rows={1}
+                    />
+                    <button onClick={handleSendMessage} disabled={!inputValue.trim() || isLoading} className={`absolute right-2 bottom-2 p-2 rounded-lg transition-all ${!inputValue.trim() || isLoading ? 'text-white/10' : 'text-cyan-400 hover:bg-cyan-500/10'}`}>
+                        <Send size={18} />
+                    </button>
+                </div>
             </div>
         </div>
     );

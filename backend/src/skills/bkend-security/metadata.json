@@ -1,0 +1,13 @@
+{
+  "id": "bkend-security",
+  "name": "bkend-security",
+  "description": "Specialized intelligence for bkend-security",
+  "triggers": [
+    "보안정책",
+    "rls",
+    "권한",
+    "접근제어",
+    "encryption",
+    "암호화"
+  ]
+}

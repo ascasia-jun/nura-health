@@ -1,0 +1,12 @@
+{
+  "id": "enterprise",
+  "name": "enterprise",
+  "description": "Specialized intelligence for enterprise",
+  "triggers": [
+    "엔터프라이즈",
+    "대규모",
+    "microservice",
+    "k8s",
+    "infra"
+  ]
+}

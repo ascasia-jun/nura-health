@@ -1,0 +1,11 @@
+{
+  "id": "starter",
+  "name": "starter",
+  "description": "Specialized intelligence for starter",
+  "triggers": [
+    "스타터",
+    "정적",
+    "static",
+    "기본"
+  ]
+}

@@ -1,0 +1,11 @@
+{
+  "id": "phase-9-deployment",
+  "name": "phase-9-deployment",
+  "description": "Specialized intelligence for phase-9-deployment",
+  "triggers": [
+    "배포",
+    "deploy",
+    "ci/cd",
+    "클라우드"
+  ]
+}

@@ -1,0 +1,11 @@
+{
+  "id": "phase-4-api",
+  "name": "phase-4-api",
+  "description": "Specialized intelligence for phase-4-api",
+  "triggers": [
+    "api 설계",
+    "엔드포인트",
+    "endpoint",
+    "백엔드"
+  ]
+}

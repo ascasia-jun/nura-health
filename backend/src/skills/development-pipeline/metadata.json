@@ -1,0 +1,6 @@
+{
+  "id": "development-pipeline",
+  "name": "9-Phase Pipeline",
+  "description": "Standard development lifecycle guide",
+  "triggers": ["뭐부터", "순서", "진행", "어떻게 시작", "pipeline", "가이드"]
+}

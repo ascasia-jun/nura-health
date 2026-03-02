@@ -29,7 +29,7 @@ const INITIAL_MESSAGE: Message = {
 };
 
 /**
- * ChatOps 기능을 관리하는 커스텀 훅 (v3.1 - GitHub Insight Expansion)
+ * ChatOps 기능을 관리하는 커스텀 훅 (v3.5 - Auto-Skill UI Sync)
  */
 export const useChatOps = (initialModel: string = 'gemini-1.5-flash') => {
     const [messages, setMessages] = useState<Message[]>([INITIAL_MESSAGE]);
@@ -38,7 +38,6 @@ export const useChatOps = (initialModel: string = 'gemini-1.5-flash') => {
     const [sessions, setSessions] = useState<ChatSession[]>([]);
     const [currentSessionId, setCurrentSessionId] = useState<string | null>(null);
     
-    // --- 확장 기능 상태 ---
     const [skills, setSkills] = useState<{id: string, name: string}[]>([]);
     const [activeSkillId, setActiveSkillId] = useState<string | null>(null);
     const [selectedHooks, setSelectedHooks] = useState<string[]>([]);
@@ -71,20 +70,13 @@ export const useChatOps = (initialModel: string = 'gemini-1.5-flash') => {
 
     const createNewSession = useCallback(() => {
         const newId = Date.now().toString();
-        const newSession: ChatSession = { 
-            id: newId, 
-            title: 'New Analysis Session', 
-            messages: [INITIAL_MESSAGE],
-            model: currentModel, 
-            timestamp: new Date(), 
-            draftInput: '', 
-            isLoading: false 
-        };
+        const newSession: ChatSession = { id: newId, title: 'New Analysis Session', messages: [INITIAL_MESSAGE], model: currentModel, timestamp: new Date(), draftInput: '', isLoading: false };
         setSessions(prev => [newSession, ...prev].slice(0, 20));
         setMessages([INITIAL_MESSAGE]);
         setCurrentSessionId(newId);
         setSelectedHooks([]);
         setAttachedResources([]);
+        setActiveSkillId(null);
     }, [currentModel]);
 
     const loadSession = useCallback((session: ChatSession, currentInput?: string) => {
@@ -96,8 +88,6 @@ export const useChatOps = (initialModel: string = 'gemini-1.5-flash') => {
         setCurrentSessionId(session.id);
         return session.draftInput || '';
     }, [currentSessionId]);
-
-    // --- GitHub 리소스 제어 ---
 
     const toggleHook = (fileName: string) => {
         setSelectedHooks(prev => prev.includes(fileName) ? prev.filter(h => h !== fileName) : [...prev, fileName]);
@@ -129,9 +119,44 @@ export const useChatOps = (initialModel: string = 'gemini-1.5-flash') => {
     const parseStreamChunk = useCallback((rawData: string, targetId: string) => {
         try {
             const parsed = JSON.parse(rawData);
-            if (parsed.done) return true;
+            
+            if (parsed.done) {
+                setMessages(prev => {
+                    const next = [...prev];
+                    const last = next[next.length - 1];
+                    if (last && last.role === 'assistant') {
+                        last.isDone = true;
+                    }
+                    return next;
+                });
+                return true;
+            }
+
             const type = parsed.type === 'answer' ? 'text' : 'thought';
             const content = parsed.type === 'answer' ? parsed.text : parsed.content;
+
+            // [v3.5] 자동 스킬 활성화 신호 감지 및 사용자 말풍선 UI 동기화
+            if (type === 'thought' && content.startsWith('Auto-activating skill: ')) {
+                const skillId = content.replace('Auto-activating skill: ', '').trim();
+                
+                // 1. 현재 툴바 상태 업데이트
+                setActiveSkillId(skillId);
+
+                // 2. 이미 렌더링된 사용자 메시지의 메타데이터 소급 업데이트
+                setMessages(prev => {
+                    const next = [...prev];
+                    // 역순으로 탐색하여 가장 최근의 사용자 메시지를 찾음
+                    for (let i = next.length - 1; i >= 0; i--) {
+                        if (next[i].role === 'user') {
+                            if (!next[i].meta) next[i].meta = {};
+                            // @ts-ignore
+                            next[i].meta.activeSkillId = skillId;
+                            break;
+                        }
+                    }
+                    return next;
+                });
+            }
 
             setMessages(prev => {
                 const updatedMessages = [...prev];
@@ -152,7 +177,7 @@ export const useChatOps = (initialModel: string = 'gemini-1.5-flash') => {
                         !p.content?.startsWith('Completed:') && 
                         !p.content?.startsWith('Failed:')
                     );
-                    if (targetPart && content && (content.startsWith('Completed:') || content.startsWith('Failed:') || content.includes('Analyzing'))) {
+                    if (targetPart && (content.startsWith('Completed:') || content.startsWith('Failed:') || content.includes('Analyzing'))) {
                         targetPart.content = content;
                     } else if (content && !last.parts.some(p => p.type === 'thought' && p.content === content)) {
                         last.parts.push({ type: 'thought', content });
@@ -172,10 +197,6 @@ export const useChatOps = (initialModel: string = 'gemini-1.5-flash') => {
         let activeId: string = sessionId || Date.now().toString();
 
         try {
-            const hookTags = selectedHooks.map(h => `@${h}`).join(' ');
-            const resTags = attachedResources.map(r => `@${r.type.toUpperCase()}:${r.name}`).join(' ');
-            const displayInput = [hookTags, resTags, input].filter(Boolean).join('\n');
-
             if (!sessionId) {
                 const newSession: ChatSession = { id: activeId, title: input.substring(0, 30), messages: [INITIAL_MESSAGE], model: currentModel, timestamp: new Date(), draftInput: '', isLoading: true };
                 setSessions(prev => [newSession, ...prev]);
@@ -187,7 +208,17 @@ export const useChatOps = (initialModel: string = 'gemini-1.5-flash') => {
             const targetSession = sessions.find(s => s.id === activeId);
             const baseMessages = targetSession?.messages || messages;
             
-            const userMsg: Message = { id: Date.now().toString(), role: 'user', parts: [{ type: 'text', content: displayInput }], timestamp: new Date() };
+            const userMsg: Message = { 
+                id: Date.now().toString(), 
+                role: 'user', 
+                parts: [{ type: 'text', content: input }], 
+                timestamp: new Date(),
+                meta: {
+                    activeSkillId,
+                    selectedHooks: [...selectedHooks],
+                    attachedResources: [...attachedResources]
+                }
+            };
             const aiMsg: Message = { id: (Date.now() + 1).toString(), role: 'assistant', parts: [], timestamp: new Date(), model: currentModel };
 
             const nextMessages: Message[] = [...(baseMessages || [INITIAL_MESSAGE]), userMsg, aiMsg];

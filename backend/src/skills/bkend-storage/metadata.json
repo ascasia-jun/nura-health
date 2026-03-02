@@ -1,0 +1,14 @@
+{
+  "id": "bkend-storage",
+  "name": "bkend-storage",
+  "description": "Specialized intelligence for bkend-storage",
+  "triggers": [
+    "파일",
+    "업로드",
+    "다운로드",
+    "스토리지",
+    "storage",
+    "image",
+    "이미지"
+  ]
+}

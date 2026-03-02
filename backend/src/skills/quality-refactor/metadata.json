@@ -1,0 +1,11 @@
+{
+  "id": "quality-refactor",
+  "name": "Quality & Refactor",
+  "description": "Code quality improvement and refactoring guides",
+  "triggers": [
+    "품질",
+    "리팩토링",
+    "refactor",
+    "가독성"
+  ]
+}

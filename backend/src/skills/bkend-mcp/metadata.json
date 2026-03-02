@@ -1,0 +1,12 @@
+{
+  "id": "bkend-mcp",
+  "name": "bkend-mcp",
+  "description": "Specialized intelligence for bkend-mcp",
+  "triggers": [
+    "mcp",
+    "도구",
+    "연동",
+    "설정",
+    "ai tool"
+  ]
+}

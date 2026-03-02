@@ -1,0 +1,11 @@
+{
+  "id": "phase-6-ui-integration",
+  "name": "phase-6-ui-integration",
+  "description": "Specialized intelligence for phase-6-ui-integration",
+  "triggers": [
+    "ui 구현",
+    "연동",
+    "integration",
+    "프론트엔드"
+  ]
+}
