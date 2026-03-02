@@ -40,8 +40,7 @@ export const ChatOpsPage: React.FC = () => {
 
     const isCurrentSessionLoading = sessions.find(s => s.id === currentSessionId)?.isLoading || false;
 
-    // --- 데이터 로드 ---
-
+    // 데이터 로드 로직 (기존 유지)
     const fetchRepositories = useCallback(async () => {
         setIsRepoLoading(true);
         try {
@@ -90,8 +89,6 @@ export const ChatOpsPage: React.FC = () => {
     const scrollToBottom = useCallback(() => { messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' }); }, []);
     useEffect(() => { scrollToBottom(); }, [messages, scrollToBottom]);
 
-    // --- 핸들러 ---
-
     const handleSendMessage = async () => {
         const trimmed = input.trim();
         if (!trimmed || isCurrentSessionLoading || isProcessingRef.current) return;
@@ -105,11 +102,6 @@ export const ChatOpsPage: React.FC = () => {
     const handleAnalyzeSourceCode = async () => {
         if (!selectedRepo || isCurrentSessionLoading || isProcessingRef.current) return;
         await sendMessage(`저장소 \`${selectedRepo.full_name}\` 분석 요청`, currentSessionId, selectedRepo);
-    };
-
-    const handlePrReview = async (pr: any) => {
-        if (!selectedRepo || isCurrentSessionLoading || isProcessingRef.current) return;
-        await sendMessage(`PR #${pr.number} 리뷰 요청`, currentSessionId, selectedRepo);
     };
 
     const handleResourceToggle = (type: 'pr' | 'commit' | 'file', item: any) => {
@@ -138,7 +130,7 @@ export const ChatOpsPage: React.FC = () => {
 
     return (
         <div className="flex h-screen bg-slate-950 text-slate-200 font-sans overflow-hidden">
-            {/* 왼쪽 사이드바 */}
+            {/* 왼쪽 사이드바 (기존 유지) */}
             <aside className="w-72 bg-slate-900/50 border-r border-white/5 flex flex-col hidden md:flex backdrop-blur-xl">
                 <div className="p-6 flex items-center gap-3 border-b border-white/5">
                     <div className="w-8 h-8 bg-cyan-500 rounded-lg flex items-center justify-center text-slate-900 shadow-[0_0_15px_rgba(6,182,212,0.5)]"><Bot size={20} /></div>
@@ -170,56 +162,102 @@ export const ChatOpsPage: React.FC = () => {
                 </div>
             </aside>
 
-            {/* 메인 영역 */}
+            {/* 메인 대화 영역 */}
             <main className="flex-1 flex flex-col relative bg-gradient-to-b from-slate-950 to-slate-900">
                 <div className="flex-1 overflow-y-auto p-4 md:p-8 space-y-10 custom-scrollbar">
-                    {(messages || []).map((msg, idx) => (
-                        <div key={idx} className={`flex gap-4 max-w-4xl mx-auto ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}>
-                            {msg.role === 'assistant' && (msg.parts?.length || 0) > 0 && (
-                                <div className="w-10 h-10 rounded-xl bg-cyan-500/10 text-cyan-400 flex items-center justify-center shrink-0 mt-1 border border-cyan-500/20 shadow-lg"><Bot size={20} /></div>
-                            )}
-                            <div className={`max-w-[85%] md:max-w-[80%] rounded-2xl p-0 overflow-hidden flex flex-col gap-1 ${msg.role === 'user' ? 'bg-transparent items-end' : ''}`}>
-                                {/* [v3.4] 사용자 메시지 상단에 부착된 메타데이터 아이콘 표시 */}
-                                {msg.role === 'user' && msg.meta && (
-                                    <div className="flex flex-wrap gap-2 mb-1 justify-end">
-                                        {msg.meta.activeSkillId && (
-                                            <span className="flex items-center gap-1 px-2 py-0.5 bg-amber-500/20 text-amber-400 border border-amber-500/30 rounded text-[9px] font-black uppercase">
-                                                <Zap size={10} fill="currentColor" /> {msg.meta.activeSkillId}
-                                            </span>
-                                        )}
-                                        {msg.meta.selectedHooks?.map(h => (
-                                            <span key={h} className="flex items-center gap-1 px-2 py-0.5 bg-cyan-500/20 text-cyan-400 border border-cyan-500/30 rounded text-[9px] font-black uppercase">
-                                                <FileText size={10} /> {h}
-                                            </span>
-                                        ))}
-                                        {msg.meta.attachedResources?.map(r => (
-                                            <span key={`${r.type}-${r.id}`} className="flex items-center gap-1 px-2 py-0.5 bg-indigo-500/20 text-indigo-400 border border-indigo-500/30 rounded text-[9px] font-black uppercase">
-                                                <Hash size={10} /> {r.name}
-                                            </span>
-                                        ))}
-                                    </div>
-                                )}
+                    {(messages || []).map((msg, idx) => {
+                        // @ts-ignore
+                        const isDone = msg.isDone || false;
+                        const lastTextPartIdx = [...(msg.parts || [])].reverse().findIndex(p => p.type === 'text');
+                        const actualLastTextPartIdx = lastTextPartIdx === -1 ? -1 : (msg.parts?.length || 0) - 1 - lastTextPartIdx;
 
-                                {msg.parts?.map((part, pIdx) => (
-                                    part.type === 'thought' 
-                                        ? <ProcessNode key={pIdx} content={part.content} />
-                                        : <div key={pIdx} className={`p-5 md:p-8 text-sm md:text-base leading-relaxed shadow-xl ${msg.role === 'user' ? 'bg-cyan-600 text-white rounded-2xl rounded-tr-none' : 'bg-slate-900/40 text-slate-200 border border-white/10 rounded-2xl rounded-tl-none backdrop-blur-sm'}`}>
-                                            <MarkdownRenderer content={part.content} collapsible={msg.role === 'assistant' && pIdx < (msg.parts?.length || 0) - 1} />
-                                          </div>
-                                ))}
+                        return (
+                            <div key={idx} className={`flex gap-4 max-w-4xl mx-auto ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}>
+                                {msg.role === 'assistant' && (msg.parts?.length || 0) > 0 && (
+                                    <div className="w-10 h-10 rounded-xl bg-cyan-500/10 text-cyan-400 flex items-center justify-center shrink-0 mt-1 border border-cyan-500/20 shadow-lg"><Bot size={20} /></div>
+                                )}
+                                
+                                <div className={`max-w-[85%] md:max-w-[80%] rounded-2xl p-0 overflow-hidden flex flex-col gap-1 ${msg.role === 'user' ? 'bg-transparent items-end' : ''}`}>
+                                    {/* 사용자 말풍선 및 상단 배지 (내부 통합) */}
+                                    {msg.role === 'user' ? (
+                                        <div className="bg-cyan-600 text-white rounded-2xl rounded-tr-none shadow-xl overflow-hidden flex flex-col">
+                                            {/* [v3.4] 말풍선 내부 상단 배지 */}
+                                            {msg.meta && (msg.meta.activeSkillId || (msg.meta.selectedHooks?.length || 0) > 0 || (msg.meta.attachedResources?.length || 0) > 0) && (
+                                                <div className="flex flex-wrap gap-2 p-3 bg-black/10 border-b border-white/10">
+                                                    {msg.meta.activeSkillId && (
+                                                        <span className="flex items-center gap-1 px-2 py-0.5 bg-amber-500 text-slate-950 rounded text-[9px] font-black uppercase shadow-sm">
+                                                            <Zap size={10} fill="currentColor" /> {msg.meta.activeSkillId}
+                                                        </span>
+                                                    )}
+                                                    {msg.meta.selectedHooks?.map(h => (
+                                                        <span key={h} className="flex items-center gap-1 px-2 py-0.5 bg-white/20 text-white border border-white/20 rounded text-[9px] font-bold uppercase">
+                                                            <FileText size={10} /> {h}
+                                                        </span>
+                                                    ))}
+                                                    {msg.meta.attachedResources?.map((r: any) => (
+                                                        <span key={`${r.type}-${r.id}`} className="flex items-center gap-1 px-2 py-0.5 bg-indigo-500/50 text-white border border-white/10 rounded text-[9px] font-bold uppercase">
+                                                            <Hash size={10} /> {r.name}
+                                                        </span>
+                                                    ))}
+                                                </div>
+                                            )}
+                                            <div className="p-5 md:p-6 text-sm md:text-base font-medium leading-relaxed">
+                                                <MarkdownRenderer content={msg.parts?.[0]?.content || ''} />
+                                            </div>
+                                        </div>
+                                    ) : (
+                                        /* AI 말풍선 */
+                                        <div className={`relative flex flex-col gap-1 ${isDone ? 'final-report' : ''}`}>
+                                            {/* [v3.4] 최종 레포트 배지 */}
+                                            {isDone && (
+                                                <div className="flex justify-start mb-1">
+                                                    <div className="flex items-center gap-2 px-3 py-1 bg-amber-500/10 border border-amber-500/30 rounded-full shadow-[0_0_15px_rgba(245,158,11,0.15)]">
+                                                        <Sparkles size={12} className="text-amber-400 animate-pulse" />
+                                                        <span className="text-[10px] font-black text-amber-400 uppercase tracking-widest">Final Analysis Report</span>
+                                                    </div>
+                                                </div>
+                                            )}
+
+                                            {msg.parts?.map((part, pIdx) => {
+                                                if (part.type === 'thought') {
+                                                    // [v3.4] 완료된 비핵심 노드 숨김 처리 (단, 마지막 메시지가 아닐 때만)
+                                                    const isProcessNode = part.content.startsWith('Completed:') || part.content.startsWith('Executing');
+                                                    if (isDone && isProcessNode) return null;
+                                                    return <ProcessNode key={pIdx} content={part.content} />;
+                                                }
+                                                
+                                                // [v3.4] 중간 응답 기본 접힘 적용
+                                                // 마지막 메시지의 마지막 텍스트 파트가 아니면 접음
+                                                const isLastMsg = idx === messages.length - 1;
+                                                const isActualLastPart = isLastMsg && pIdx === actualLastTextPartIdx;
+                                                
+                                                return (
+                                                    <div key={pIdx} className={`p-5 md:p-8 text-sm md:text-base leading-relaxed shadow-xl bg-slate-900/40 text-slate-200 border border-white/10 rounded-2xl rounded-tl-none backdrop-blur-sm`}>
+                                                        <MarkdownRenderer 
+                                                            content={part.content} 
+                                                            collapsible={!isActualLastPart} 
+                                                            defaultCollapsed={!isActualLastPart && isDone} 
+                                                        />
+                                                    </div>
+                                                );
+                                            })}
+                                        </div>
+                                    )}
+                                </div>
+                                
+                                {msg.role === 'user' && (
+                                    <div className="w-10 h-10 rounded-xl bg-white/5 text-slate-400 flex items-center justify-center shrink-0 mt-1 border border-white/10 shadow-lg"><User size={20} /></div>
+                                )}
                             </div>
-                            {msg.role === 'user' && (
-                                <div className="w-10 h-10 rounded-xl bg-white/5 text-slate-400 flex items-center justify-center shrink-0 mt-1 border border-white/10 shadow-lg"><User size={20} /></div>
-                            )}
-                        </div>
-                    ))}
+                        );
+                    })}
                     {isCurrentSessionLoading && (messages[messages.length - 1]?.parts || []).length === 0 && <ChatLoader />}
                     <div ref={messagesEndRef} />
                 </div>
 
+                {/* 입력창 영역 (기존 유지) */}
                 <div className="p-6 md:p-10 bg-slate-900/60 backdrop-blur-3xl border-t border-white/5 space-y-4">
                     <div className="max-w-4xl mx-auto flex items-center gap-3 px-2">
-                        {/* Skill 선택 */}
                         <div className="relative">
                             <button onClick={() => { setIsSkillListOpen(!isSkillListOpen); setIsHookListOpen(false); }} className={`flex items-center gap-1.5 px-4 py-2 border rounded-xl text-[11px] font-black transition-all uppercase tracking-widest ${activeSkillId ? 'bg-amber-500/20 border-amber-500/40 text-amber-400 shadow-[0_0_15px_rgba(245,158,11,0.2)]' : 'bg-white/5 border-white/10 text-slate-400 hover:text-amber-400'}`}>
                                 <Zap size={14} fill={activeSkillId ? 'currentColor' : 'none'} /> {activeSkillId ? `Skill: ${activeSkillId}` : 'Select Skill'}
@@ -242,7 +280,6 @@ export const ChatOpsPage: React.FC = () => {
                             )}
                         </div>
 
-                        {/* Context Hook 선택 */}
                         <div className="relative">
                             <button onClick={() => { setIsHookListOpen(!isHookListOpen); setIsSkillListOpen(false); }} className={`flex items-center gap-1.5 px-4 py-2 border rounded-xl text-[11px] font-black transition-all uppercase tracking-widest ${selectedHooks?.length > 0 ? 'bg-cyan-500/20 border-cyan-500/40 text-cyan-400 shadow-[0_0_15px_rgba(6,182,212,0.2)]' : 'bg-white/5 border-white/10 text-slate-400 hover:text-cyan-400'}`}>
                                 <Hash size={14} /> Context Hooks {selectedHooks?.length > 0 && `(${selectedHooks.length})`}
@@ -274,29 +311,12 @@ export const ChatOpsPage: React.FC = () => {
                     </div>
 
                     <div className="max-w-4xl mx-auto relative group">
-                        <div className="absolute top-3 left-4 flex flex-wrap gap-2 z-10 pointer-events-none">
-                            {activeSkillId && (
-                                <span className="flex items-center gap-1 px-2 py-0.5 bg-amber-500 text-slate-950 rounded text-[9px] font-black uppercase pointer-events-auto">
-                                    <Zap size={8} fill="currentColor" /> {activeSkillId} <X size={8} className="cursor-pointer" onClick={() => setActiveSkillId(null)} />
-                                </span>
-                            )}
-                            {selectedHooks?.map(h => (
-                                <span key={h} className="flex items-center gap-1 px-2 py-0.5 bg-cyan-500 text-slate-950 rounded text-[9px] font-black uppercase pointer-events-auto">
-                                    @{h} <X size={8} className="cursor-pointer" onClick={() => toggleHook(h)} />
-                                </span>
-                            ))}
-                            {attachedResources?.map(r => (
-                                <span key={`${r.type}-${r.id}`} className="flex items-center gap-1 px-2 py-0.5 bg-indigo-500 text-white rounded text-[9px] font-black uppercase pointer-events-auto">
-                                    @{r.type.toUpperCase()}:{r.name} <X size={8} className="cursor-pointer" onClick={() => removeResource(r.type, r.id)} />
-                                </span>
-                            ))}
-                        </div>
                         <textarea
                             value={input}
                             onChange={(e) => setInput(e.target.value)}
                             onKeyDown={(e) => { if (!e.nativeEvent.isComposing && e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleSendMessage(); } }}
                             placeholder={activeSkillId ? `Ask anything with [${activeSkillId}] skill...` : "AI에게 프로젝트 분석 명령을 입력하세요..."}
-                            className={`w-full bg-slate-800/40 text-slate-100 rounded-2xl pr-16 border border-white/10 focus:outline-none focus:border-cyan-500 shadow-2xl resize-none min-h-[64px] custom-scrollbar transition-all ${(activeSkillId || (selectedHooks?.length || 0) > 0 || (attachedResources?.length || 0) > 0) ? 'pt-10 pl-6' : 'py-5 pl-6'}`}
+                            className={`w-full bg-slate-800/40 text-slate-100 rounded-2xl pr-16 border border-white/10 focus:outline-none focus:border-cyan-500 shadow-2xl resize-none min-h-[64px] custom-scrollbar transition-all py-5 pl-6`}
                             disabled={isCurrentSessionLoading}
                             rows={1}
                         />
@@ -309,6 +329,7 @@ export const ChatOpsPage: React.FC = () => {
 
             <SettingsModal isOpen={isSettingsOpen} onClose={() => setIsSettingsOpen(false)} currentModel={currentModel} />
 
+            {/* 오른쪽 사이드바 (기존 유지) */}
             {isRightSidebarOpen && (
                 <aside className="w-80 bg-slate-900/50 border-l border-white/5 flex flex-col backdrop-blur-xl animate-in slide-in-from-right duration-300">
                     <div className="p-6 border-b border-white/5">

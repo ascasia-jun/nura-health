@@ -13,7 +13,8 @@ export interface Message {
     parts: ChatPart[];
     timestamp: Date;
     model?: string;
-    // [v3.4] UI 시각화를 위한 메타데이터 추가
+    // [v3.4] UI 시각화를 위한 메타데이터 및 상태 추가
+    isDone?: boolean; // 에이전트 루프 완료 여부
     meta?: {
         activeSkillId?: string | null;
         selectedHooks?: string[];

@@ -29,7 +29,7 @@ const INITIAL_MESSAGE: Message = {
 };
 
 /**
- * ChatOps 기능을 관리하는 커스텀 훅 (v3.4 - Meta Data Visualization Support)
+ * ChatOps 기능을 관리하는 커스텀 훅 (v3.4 - UI Optimization Support)
  */
 export const useChatOps = (initialModel: string = 'gemini-1.5-flash') => {
     const [messages, setMessages] = useState<Message[]>([INITIAL_MESSAGE]);
@@ -38,7 +38,6 @@ export const useChatOps = (initialModel: string = 'gemini-1.5-flash') => {
     const [sessions, setSessions] = useState<ChatSession[]>([]);
     const [currentSessionId, setCurrentSessionId] = useState<string | null>(null);
     
-    // --- 확장 기능 상태 ---
     const [skills, setSkills] = useState<{id: string, name: string}[]>([]);
     const [activeSkillId, setActiveSkillId] = useState<string | null>(null);
     const [selectedHooks, setSelectedHooks] = useState<string[]>([]);
@@ -120,7 +119,21 @@ export const useChatOps = (initialModel: string = 'gemini-1.5-flash') => {
     const parseStreamChunk = useCallback((rawData: string, targetId: string) => {
         try {
             const parsed = JSON.parse(rawData);
-            if (parsed.done) return true;
+            
+            // [v3.4] 에이전트 루프 종료 처리
+            if (parsed.done) {
+                setMessages(prev => {
+                    const next = [...prev];
+                    const last = next[next.length - 1];
+                    if (last && last.role === 'assistant') {
+                        // @ts-ignore
+                        last.isDone = true; // 최종 응답임을 표시
+                    }
+                    return next;
+                });
+                return true;
+            }
+
             const type = parsed.type === 'answer' ? 'text' : 'thought';
             const content = parsed.type === 'answer' ? parsed.text : parsed.content;
 
@@ -179,11 +192,10 @@ export const useChatOps = (initialModel: string = 'gemini-1.5-flash') => {
             const targetSession = sessions.find(s => s.id === activeId);
             const baseMessages = targetSession?.messages || messages;
             
-            // [v3.4] UI 시각화를 위한 메타데이터 포함 메시지 생성
             const userMsg: Message = { 
                 id: Date.now().toString(), 
                 role: 'user', 
-                parts: [{ type: 'text', content: input }], // 텍스트 태그 없이 본문만 저장
+                parts: [{ type: 'text', content: input }], 
                 timestamp: new Date(),
                 meta: {
                     activeSkillId,
@@ -196,7 +208,6 @@ export const useChatOps = (initialModel: string = 'gemini-1.5-flash') => {
             const nextMessages: Message[] = [...(baseMessages || [INITIAL_MESSAGE]), userMsg, aiMsg];
             setMessages(nextMessages);
 
-            // 실제 API 전송용 컨텍스트 결합 로직은 기존 유지
             let hookContext = '';
             if (selectedHooks.length > 0) {
                 const contents = await Promise.all(selectedHooks.map(async h => {
@@ -229,7 +240,6 @@ export const useChatOps = (initialModel: string = 'gemini-1.5-flash') => {
                 }),
             });
 
-            // 소모성 상태 초기화
             setSelectedHooks([]);
             setAttachedResources([]);
 
