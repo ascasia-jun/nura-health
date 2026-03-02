@@ -11,7 +11,6 @@ import { ContentPreviewModal } from './Chat/ContentPreviewModal';
 
 type SidebarTab = 'PR' | 'Push' | 'Code';
 
-// [v3.7] MCP 도구 상세 명세 데이터
 const MCP_TOOL_SPECS: Record<string, string> = {
     'grep_search': "# grep_search\n\n리포지토리 전역에서 특정 문자열이나 정규표현식 패턴을 검색합니다.\n\n### Parameters\n- `query`: 검색할 문자열 또는 정규표현식\n\n### Usage\n- 보안 취약점 패턴 탐지 (예: `eval(`, `apiKey`)\n- 특정 함수의 모든 사용처 조사\n- 환경 설정 키워드 추적",
     'glob': "# glob\n\n와일드카드 패턴을 사용하여 조건에 맞는 파일 목록을 탐색합니다.\n\n### Parameters\n- `pattern`: Glob 패턴 (예: `**/*.ts`, `src/components/*.tsx`)\n\n### Usage\n- 특정 확장자 파일 일괄 식별\n- 프로젝트 폴더 구조 분석\n- 설정 파일 자동 탐색",
@@ -35,7 +34,6 @@ export const ChatOpsPage: React.FC = () => {
     const [editingSessionId, setEditingSessionId] = useState<string | null>(null);
     const [editTitleValue, setEditTitleValue] = useState('');
 
-    // [v3.7] 폴더 확장 상태 관리
     const [expandedFolders, setExpandedFolders] = useState<Set<string>>(new Set(['']));
 
     const [isPreviewOpen, setIsPreviewOpen] = useState(false);
@@ -89,13 +87,28 @@ export const ChatOpsPage: React.FC = () => {
             } else if (activeTab === 'Code') {
                 const res = await fetch(`${API_URL}/api/github/repos/${owner}/${name}/tree`);
                 const data = await res.json();
+                
+                // 계층형 정렬 알고리즘 (v3.7 고도화)
                 const sortedTree = (data.tree || []).sort((a: any, b: any) => {
-                    if (a.type !== b.type) return a.type === 'tree' ? -1 : 1;
-                    return a.path.localeCompare(b.path);
+                    const partsA = a.path.split('/');
+                    const partsB = b.path.split('/');
+                    const len = Math.min(partsA.length, partsB.length);
+                    for (let i = 0; i < len; i++) {
+                        if (partsA[i] !== partsB[i]) {
+                            const isLastA = i === partsA.length - 1;
+                            const isLastB = i === partsB.length - 1;
+                            const isFolderA = !isLastA || a.type === 'tree';
+                            const isFolderB = !isLastB || b.type === 'tree';
+                            if (isFolderA && !isFolderB) return -1;
+                            if (!isFolderA && isFolderB) return 1;
+                            return partsA[i].localeCompare(partsB[i]);
+                        }
+                    }
+                    return partsA.length - partsB.length;
                 });
                 setFileTree(sortedTree);
             }
-        } catch (e) { console.error('데이터 로드 실패'); } finally { setIsDataLoading(false); }
+        } catch (e) { console.error('데이터 로드 실패'); } finally { setIsDataLoading(true); setIsDataLoading(false); }
     }, [selectedRepo, activeTab]);
 
     useEffect(() => { fetchRepositories(); }, [fetchRepositories]);
@@ -156,11 +169,7 @@ export const ChatOpsPage: React.FC = () => {
         setPreviewTitle(name);
         setIsPreviewOpen(true);
         try {
-            if (type === 'mcp') {
-                setPreviewContent(MCP_TOOL_SPECS[id] || '명세 정보가 없습니다.');
-                setIsPreviewLoading(false);
-                return;
-            }
+            if (type === 'mcp') { setPreviewContent(MCP_TOOL_SPECS[id] || '명세 정보가 없습니다.'); setIsPreviewLoading(false); return; }
             let url = '';
             if (type === 'skill') url = `${API_URL}/api/skills/${id}/content`;
             else url = `${API_URL}/api/context/hook?fileName=${id}`;
@@ -178,10 +187,8 @@ export const ChatOpsPage: React.FC = () => {
         const blob = new Blob(['\ufeff', html], { type: 'application/msword' });
         const url = URL.createObjectURL(blob);
         const link = document.createElement('a');
-        link.href = url;
-        link.download = `RepoInsight_Report_${repoName}_${date}.doc`;
-        link.click();
-        URL.revokeObjectURL(url);
+        link.href = url; link.download = `RepoInsight_Report_${repoName}_${date}.doc`;
+        link.click(); URL.revokeObjectURL(url);
     };
 
     const handleSendEmail = (content: string) => {
@@ -199,18 +206,9 @@ export const ChatOpsPage: React.FC = () => {
         return skill ? skill.name : id.toUpperCase();
     };
 
-    const startEditing = (e: React.MouseEvent, id: string, title: string) => {
-        e.stopPropagation();
-        setEditingSessionId(id);
-        setEditTitleValue(title);
-    };
+    const startEditing = (e: React.MouseEvent, id: string, title: string) => { e.stopPropagation(); setEditingSessionId(id); setEditTitleValue(title); };
+    const saveTitle = (id: string) => { if (editTitleValue.trim()) updateSessionTitle(id, editTitleValue.trim()); setEditingSessionId(null); };
 
-    const saveTitle = (id: string) => {
-        if (editTitleValue.trim()) updateSessionTitle(id, editTitleValue.trim());
-        setEditingSessionId(null);
-    };
-
-    // [v3.7] 폴더 토글 함수
     const toggleFolder = (e: React.MouseEvent, path: string) => {
         e.stopPropagation();
         setExpandedFolders(prev => {
@@ -219,6 +217,21 @@ export const ChatOpsPage: React.FC = () => {
             else next.add(path);
             return next;
         });
+    };
+
+    /**
+     * [v3.7 Iteration] 재귀적으로 모든 부모 폴더가 펼쳐져 있는지 확인합니다.
+     */
+    const isPathVisible = (path: string) => {
+        const parts = path.split('/');
+        if (parts.length === 1) return true; // 루트 항목은 항상 보임
+        
+        let currentPath = '';
+        for (let i = 0; i < parts.length - 1; i++) {
+            currentPath = currentPath ? `${currentPath}/${parts[i]}` : parts[i];
+            if (!expandedFolders.has(currentPath)) return false;
+        }
+        return true;
     };
 
     return (
@@ -279,31 +292,16 @@ export const ChatOpsPage: React.FC = () => {
                                         <div className="bg-slate-900/40 backdrop-blur-xl border border-white/10 rounded-2xl rounded-tr-none shadow-2xl overflow-hidden flex flex-col">
                                             {msg.meta && (msg.meta.activeSkillId || (msg.meta.selectedHooks?.length || 0) > 0 || (msg.meta.attachedResources?.length || 0) > 0) && (
                                                 <div className="flex flex-wrap gap-2 p-3 bg-white/5 border-b border-white/5">
-                                                    {msg.meta.activeSkillId && (
-                                                        <span className="flex items-center gap-1.5 px-2 py-0.5 bg-amber-500 text-slate-950 rounded text-[9px] font-black uppercase shadow-glow">
-                                                            <Zap size={10} fill="currentColor" /> {getSkillName(msg.meta.activeSkillId)}
-                                                        </span>
-                                                    )}
-                                                    {msg.meta.selectedHooks?.map(h => (
-                                                        <span key={h} className="flex items-center gap-1.5 px-2 py-0.5 bg-cyan-500/20 text-cyan-400 border border-cyan-500/30 rounded text-[9px] font-black uppercase"><FileCode size={10} /> {h}</span>
-                                                    ))}
-                                                    {msg.meta.attachedResources?.map((r: any) => (
-                                                        <span key={`${r.type}-${r.id}`} className="flex items-center gap-1.5 px-2 py-0.5 bg-indigo-500/20 text-indigo-400 border border-indigo-500/30 rounded text-[9px] font-black uppercase"><Hash size={10} /> {r.name}</span>
-                                                    ))}
+                                                    {msg.meta.activeSkillId && (<span className="flex items-center gap-1.5 px-2 py-0.5 bg-amber-500 text-slate-950 rounded text-[9px] font-black uppercase shadow-glow"><Zap size={10} fill="currentColor" /> {getSkillName(msg.meta.activeSkillId)}</span>)}
+                                                    {msg.meta.selectedHooks?.map(h => (<span key={h} className="flex items-center gap-1.5 px-2 py-0.5 bg-cyan-500/20 text-cyan-400 border border-cyan-500/30 rounded text-[9px] font-black uppercase"><FileCode size={10} /> {h}</span>))}
+                                                    {msg.meta.attachedResources?.map((r: any) => (<span key={`${r.type}-${r.id}`} className="flex items-center gap-1.5 px-2 py-0.5 bg-indigo-500/20 text-indigo-400 border border-indigo-500/30 rounded text-[9px] font-black uppercase"><Hash size={10} /> {r.name}</span>))}
                                                 </div>
                                             )}
                                             <div className="p-5 md:p-8 text-sm md:text-base text-slate-100 leading-relaxed"><MarkdownRenderer content={msg.parts?.[0]?.content || ''} /></div>
                                         </div>
                                     ) : (
                                         <div className={`relative flex flex-col gap-1 ${isDone ? 'final-report' : ''}`}>
-                                            {isDone && (
-                                                <div className="flex justify-start mb-1">
-                                                    <div className="flex items-center gap-2 px-3 py-1 bg-amber-500/10 border border-amber-500/30 rounded-full shadow-[0_0_15px_rgba(245,158,11,0.15)]">
-                                                        <Sparkles size={12} className="text-amber-400 animate-pulse" />
-                                                        <span className="text-[10px] font-black text-amber-400 uppercase tracking-widest">Final Analysis Report</span>
-                                                    </div>
-                                                </div>
-                                            )}
+                                            {isDone && (<div className="flex justify-start mb-1"><div className="flex items-center gap-2 px-3 py-1 bg-amber-500/10 border border-amber-500/30 rounded-full shadow-[0_0_15px_rgba(245,158,11,0.15)]"><Sparkles size={12} className="text-amber-400 animate-pulse" /><span className="text-[10px] font-black text-amber-400 uppercase tracking-widest">Final Analysis Report</span></div></div>)}
                                             {msg.parts?.map((part, pIdx) => {
                                                 if (part.type === 'thought') {
                                                     const isProcessNode = part.content.startsWith('Completed:') || part.content.startsWith('Executing');
@@ -312,26 +310,12 @@ export const ChatOpsPage: React.FC = () => {
                                                 }
                                                 const isLastMsg = idx === messages.length - 1;
                                                 const isActualLastPart = isLastMsg && pIdx === actualLastTextPartIdx;
-                                                return (
-                                                    <div key={pIdx} className="relative group/msg">
-                                                        <div className={`p-5 md:p-8 text-sm md:text-base leading-relaxed shadow-xl bg-slate-900/40 text-slate-200 border border-white/10 rounded-2xl rounded-tl-none backdrop-blur-sm`}>
-                                                            <MarkdownRenderer content={part.content} collapsible={!isActualLastPart} defaultCollapsed={!isActualLastPart && isDone} />
-                                                            {isDone && isActualLastPart && (
-                                                                <div className="flex justify-end gap-3 mt-8 pt-6 border-t border-white/5">
-                                                                    <button onClick={() => handleExportWord(part.content)} className="flex items-center gap-2 px-3 py-1.5 bg-white/5 hover:bg-white/10 border border-white/10 rounded-lg text-[10px] font-black text-slate-400 hover:text-cyan-400 transition-all uppercase tracking-tighter" title="Word로 내보내기"><FileText size={14} /> Export Word</button>
-                                                                    <button onClick={() => handleSendEmail(part.content)} className="flex items-center gap-2 px-3 py-1.5 bg-white/5 hover:bg-white/10 border border-white/10 rounded-lg text-[10px] font-black text-slate-400 hover:text-amber-400 transition-all uppercase tracking-tighter" title="이메일로 보내기"><Mail size={14} /> Send Email</button>
-                                                                </div>
-                                                            )}
-                                                        </div>
-                                                    </div>
-                                                );
+                                                return (<div key={pIdx} className="relative group/msg"><div className={`p-5 md:p-8 text-sm md:text-base leading-relaxed shadow-xl bg-slate-900/40 text-slate-200 border border-white/10 rounded-2xl rounded-tl-none backdrop-blur-sm`}><MarkdownRenderer content={part.content} collapsible={!isActualLastPart} defaultCollapsed={!isActualLastPart && isDone} />{isDone && isActualLastPart && (<div className="flex justify-end gap-3 mt-8 pt-6 border-t border-white/5"><button onClick={() => handleExportWord(part.content)} className="flex items-center gap-2 px-3 py-1.5 bg-white/5 hover:bg-white/10 border border-white/10 rounded-lg text-[10px] font-black text-slate-400 hover:text-cyan-400 transition-all uppercase tracking-tighter" title="Word로 내보내기"><FileText size={14} /> Export Word</button><button onClick={() => handleSendEmail(part.content)} className="flex items-center gap-2 px-3 py-1.5 bg-white/5 hover:bg-white/10 border border-white/10 rounded-lg text-[10px] font-black text-slate-400 hover:text-amber-400 transition-all uppercase tracking-tighter" title="이메일로 보내기"><Mail size={14} /> Send Email</button></div>)}</div></div>);
                                             })}
                                         </div>
                                     )}
                                 </div>
-                                {msg.role === 'user' && (
-                                    <div className="w-10 h-10 rounded-xl bg-white/5 text-slate-400 flex items-center justify-center shrink-0 mt-1 border border-white/10 shadow-lg"><User size={20} /></div>
-                                )}
+                                {msg.role === 'user' && (<div className="w-10 h-10 rounded-xl bg-white/5 text-slate-400 flex items-center justify-center shrink-0 mt-1 border border-white/10 shadow-lg"><User size={20} /></div>)}
                             </div>
                         );
                     })}
@@ -396,12 +380,8 @@ export const ChatOpsPage: React.FC = () => {
                         </div>
                         {(selectedHooks?.length > 0 || attachedResources?.length > 0) && (
                             <div className="flex flex-wrap gap-2 py-2 px-1 animate-in fade-in slide-in-from-bottom-1 duration-300">
-                                {selectedHooks.map(h => (
-                                    <span key={h} className="flex items-center gap-1.5 px-2.5 py-1 bg-cyan-500/10 text-cyan-400 border border-cyan-500/20 rounded-lg text-[9px] font-black uppercase"><FileCode size={10} /> {h}<X size={10} className="cursor-pointer hover:text-white" onClick={() => toggleHook(h)} /></span>
-                                ))}
-                                {attachedResources.map(r => (
-                                    <span key={`${r.type}-${r.id}`} className="flex items-center gap-1.5 px-2.5 py-1 bg-indigo-500/10 text-indigo-400 border border-indigo-500/20 rounded-lg text-[9px] font-black uppercase"><Hash size={10} /> {r.name}<X size={10} className="cursor-pointer hover:text-white" onClick={() => removeResource(r.type, r.id)} /></span>
-                                ))}
+                                {selectedHooks.map(h => (<span key={h} className="flex items-center gap-1.5 px-2.5 py-1 bg-cyan-500/10 text-cyan-400 border border-cyan-500/20 rounded-lg text-[9px] font-black uppercase"><FileCode size={10} /> {h}<X size={10} className="cursor-pointer hover:text-white" onClick={() => toggleHook(h)} /></span>))}
+                                {attachedResources.map(r => (<span key={`${r.type}-${r.id}`} className="flex items-center gap-1.5 px-2.5 py-1 bg-indigo-500/10 text-indigo-400 border border-indigo-500/20 rounded-lg text-[9px] font-black uppercase"><Hash size={10} /> {r.name}<X size={10} className="cursor-pointer hover:text-white" onClick={() => removeResource(r.type, r.id)} /></span>))}
                             </div>
                         )}
                     </div>
@@ -433,7 +413,6 @@ export const ChatOpsPage: React.FC = () => {
                     </div>
 
                     <div className="flex-1 flex flex-col min-h-0">
-                        {/* Middle Area: Tabs or Placeholder */}
                         <div className="flex-1 flex flex-col min-h-0">
                             {selectedRepo ? (
                                 <>
@@ -450,22 +429,18 @@ export const ChatOpsPage: React.FC = () => {
                                                     const isFolder = file.type === 'tree';
                                                     const isExpanded = expandedFolders.has(file.path);
                                                     const isAttached = attachedResources.find(r => r.type === (isFolder ? 'folder' : 'file') && r.id === file.path);
-                                                    
-                                                    // 부모 폴더가 닫혀있는지 체크
-                                                    const parentPath = file.path.substring(0, file.path.lastIndexOf('/'));
-                                                    if (parentPath && !expandedFolders.has(parentPath)) return null;
-
+                                                    if (depth > 0) {
+                                                        const pathParts = file.path.split('/');
+                                                        let currentCheck = '';
+                                                        for (let i = 0; i < pathParts.length - 1; i++) {
+                                                            currentCheck = currentCheck ? `${currentCheck}/${pathParts[i]}` : pathParts[i];
+                                                            if (!expandedFolders.has(currentCheck)) return null;
+                                                        }
+                                                    }
                                                     return (
                                                         <button key={file.path} onClick={(e) => isFolder ? toggleFolder(e, file.path) : handleResourceToggle('file', file)} className={`w-full group flex items-center justify-between gap-2 py-0.5 px-2 rounded-lg transition-all hover:bg-white/10 ${isAttached ? 'bg-indigo-500/10 border border-indigo-500/30' : ''}`} style={{ marginLeft: `${depth * 8}px`, width: `calc(100% - ${depth * 8}px)` }}>
-                                                            <div className={`flex-1 flex items-center gap-2 truncate text-left ${isAttached ? 'text-indigo-400 font-black' : 'text-slate-400 group-hover:text-slate-200'}`}>
-                                                                {isFolder ? (isExpanded ? <ChevronDown size={10} /> : <ChevronRight size={10} />) : <div className="w-[10px]" />}
-                                                                {isFolder ? (isExpanded ? <FolderOpen size={10} className="text-cyan-400 shrink-0" /> : <Folder size={10} className="text-cyan-500 shrink-0" />) : <FileCode size={10} className="text-slate-500 shrink-0" />}
-                                                                <span className="text-[10px] truncate font-mono">{name}</span>
-                                                            </div>
-                                                            <div className="flex items-center gap-1">
-                                                                {isFolder && <button onClick={(e) => { e.stopPropagation(); handleResourceToggle('folder', file); }} className={`p-0.5 rounded ${isAttached ? 'bg-red-500/20 text-red-400' : 'bg-cyan-500/20 text-cyan-500 opacity-0 group-hover:opacity-100'}`}>{isAttached ? <X size={8} /> : <Plus size={8} />}</button>}
-                                                                {!isFolder && file.type === 'blob' && <div className={`w-1.5 h-1.5 rounded-full ${isAttached ? 'bg-indigo-500' : 'bg-transparent'}`} />}
-                                                            </div>
+                                                            <div className={`flex-1 flex items-center gap-2 truncate text-left ${isAttached ? 'text-indigo-400 font-black' : 'text-slate-400 group-hover:text-slate-200'}`}>{isFolder ? (isExpanded ? <ChevronDown size={10} /> : <ChevronRight size={10} />) : <div className="w-[10px]" />}{isFolder ? (isExpanded ? <FolderOpen size={10} className="text-cyan-400 shrink-0" /> : <Folder size={10} className="text-cyan-500 shrink-0" />) : <FileCode size={10} className="text-slate-500 shrink-0" />}<span className="text-[10px] truncate font-mono">{name}</span></div>
+                                                            <div className="flex items-center gap-1">{isFolder && <button onClick={(e) => { e.stopPropagation(); handleResourceToggle('folder', file); }} className={`p-0.5 rounded ${isAttached ? 'bg-red-500/20 text-red-400' : 'bg-cyan-500/20 text-cyan-500 opacity-0 group-hover:opacity-100'}`}>{isAttached ? <X size={8} /> : <Plus size={8} />}</button>}{!isFolder && file.type === 'blob' && <div className={`w-1.5 h-1.5 rounded-full ${isAttached ? 'bg-indigo-500' : 'bg-transparent'}`} />}</div>
                                                         </button>
                                                     );
                                                 })}
@@ -478,7 +453,6 @@ export const ChatOpsPage: React.FC = () => {
                             )}
                         </div>
 
-                        {/* [v3.7] MCP 도구 목록 섹션 (Always Visible) */}
                         <div className="h-1/3 bg-black/40 border-t border-white/10 flex flex-col">
                             <div className="p-4 border-b border-white/5 flex items-center gap-2 bg-white/5"><Wrench size={14} className="text-amber-400" /><span className="text-[10px] font-black text-slate-300 uppercase tracking-[0.2em]">Available MCP Tools</span></div>
                             <div className="flex-1 overflow-y-auto p-4 custom-scrollbar">
