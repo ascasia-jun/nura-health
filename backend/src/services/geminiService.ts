@@ -7,8 +7,8 @@ dotenv.config();
 /**
  * geminiService.ts
  * 
- * 이 서비스는 Google Gemini API와 상호작용하는 모든 로직을 담당하며,
- * 동적 모델 선택 및 목록 관리 기능을 포함합니다.
+ * RepoInsight의 AI 에이전트 핵심 로직을 담당합니다.
+ * Google Gemini API를 사용하여 리포지토리 분석 및 대화를 수행합니다.
  */
 
 const getGenAI = () => {
@@ -20,7 +20,7 @@ const getGenAI = () => {
 const genAI = getGenAI();
 
 // 현재 선택된 모델 (목록 조회 후 동적으로 결정됨)
-let currentModelName = "gemini-1.5-flash"; // 임시 초기값
+let currentModelName = "gemini-1.5-flash"; 
 
 interface AIModel {
     name: string;
@@ -29,46 +29,31 @@ interface AIModel {
 }
 
 /**
- * 가용한 모델 목록 중 최적의 모델을 선택합니다. (2.5 -> 2.0 -> 1.5 순)
+ * 가용한 모델 목록 중 최적의 모델을 선택합니다.
  */
 const selectBestModel = (models: AIModel[]): string => {
-    const priorities = ["gemini-2.5-flash", "gemini-2.5-pro", "gemini-2.0-flash", "gemini-1.5-flash", "gemini-1.5-pro"];
-    
+    const priorities = ["gemini-2.0-flash", "gemini-1.5-pro", "gemini-1.5-flash"];
     for (const priority of priorities) {
         if (models.some((m: AIModel) => m.name === priority)) return priority;
     }
-    
-    // 우선순위에 없으면 가장 첫 번째 가용 모델 반환
     return models.length > 0 ? models[0].name : "gemini-1.5-flash";
 };
 
-/**
- * 현재 사용 중인 모델명을 반환합니다.
- */
 export const getCurrentModel = () => currentModelName;
 
-/**
- * 사용할 모델을 동적으로 변경합니다.
- */
 export const setCurrentModel = (modelName: string) => {
-    console.log(`[geminiService] 모델 변경됨: ${currentModelName} -> ${modelName}`);
+    console.log(`[geminiService] 모델 변경: ${currentModelName} -> ${modelName}`);
     currentModelName = modelName;
 };
 
 /**
- * 현재 API 키로 사용 가능한 모델 목록을 조회하고 최적의 모델을 기본값으로 설정합니다.
+ * 사용 가능한 모델 목록 조회
  */
 export const listAvailableModels = async () => {
     if (!process.env.GEMINI_API_KEY) throw new Error('API Key missing');
-    
     try {
         const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models?key=${process.env.GEMINI_API_KEY}`);
-        
-        if (!response.ok) {
-            const errorBody = await response.json();
-            throw new Error(`Google API Error: ${errorBody.error?.message || response.statusText}`);
-        }
-
+        if (!response.ok) throw new Error(`Google API Error`);
         const data = await response.json();
         if (!data.models) return [];
         
@@ -80,141 +65,102 @@ export const listAvailableModels = async () => {
                 description: m.description
             }));
 
-        // 최적의 모델 자동 선택 및 동기화
         if (models.length > 0) {
             const best = selectBestModel(models);
-            if (currentModelName === "gemini-1.5-flash" || !models.some((m: AIModel) => m.name === currentModelName)) {
-                currentModelName = best;
-                console.log(`[geminiService] 가용 모델 감지 및 자동 선택: ${currentModelName}`);
-            }
+            if (currentModelName === "gemini-1.5-flash") currentModelName = best;
         }
-
         return models;
     } catch (error: any) {
-        console.error('[geminiService] 모델 목록 조회 오류:', error.message);
+        console.error('[geminiService] 모델 조회 오류:', error.message);
         throw error;
     }
 };
 
 /**
- * 사용자의 입력을 기반으로 AI 진단 결과를 요청하고 반환합니다.
+ * RepoInsight 전문 진단 프로토콜 생성
  */
 export const getAiDiagnosis = async (userInput: string): Promise<string> => {
-    console.log(`[geminiService] 진단 요청 (모델: ${currentModelName}): "${userInput}"`);
-
-    if (!genAI) return "API 키가 설정되지 않았습니다.";
-
+    if (!genAI) return "API 연동 필요";
     try {
         const model = genAI.getGenerativeModel({ model: currentModelName });
         const result = await model.generateContent(`
-            당신은 Nura AI입니다. 다음 문제를 분석하여 마크다운 형식의 전문적인 프로토콜을 생성하세요:
+            당신은 RepoInsight AI입니다. 다음 문제를 분석하여 마크다운 형식의 전문적인 프로토콜을 생성하세요:
             "${userInput}"
         `);
         const response = await result.response;
         return response.text();
     } catch (error: any) {
-        console.error('[geminiService] 진단 오류:', error.message);
         throw error;
     }
 };
 
 /**
- * 사용자의 채팅 메시지에 대한 AI 응답을 반환합니다.
+ * RepoInsight 기본 채팅 응답
  */
 export const getAiChatResponse = async (message: string): Promise<string> => {
-    console.log(`[geminiService] 채팅 수신 (모델: ${currentModelName}): "${message}"`);
-
     if (!genAI) return "API 연동 대기 중...";
-
     try {
         const model = genAI.getGenerativeModel({ model: currentModelName });
         const chat = model.startChat({
             history: [
-                { role: "user", parts: [{ text: "안녕, 너는 Nura Health의 AI 어시스턴트야." }] },
-                { role: "model", parts: [{ text: "안녕하세요! Nura Health의 AI 어시스턴트 Nura입니다. 무엇을 도와드릴까요?" }] },
+                { role: "user", parts: [{ text: "안녕, 너는 RepoInsight의 AI 어시스턴트야." }] },
+                { role: "model", parts: [{ text: "안녕하세요! RepoInsight의 전문 AI 아키텍트입니다. 리포지토리의 기술적 진단과 수명 주기 관리를 위해 무엇을 도와드릴까요?" }] },
             ],
         });
-
         const result = await chat.sendMessage(message);
         const response = await result.response;
         return response.text();
     } catch (error: any) {
-        console.error('[geminiService] 채팅 오류 상세:', error.message);
-        return `오류 발생 (${currentModelName}): ${error.message}. 다른 모델을 선택해 보세요.`;
+        return `오류 발생: ${error.message}`;
     }
 };
 
 /**
- * 사용자의 채팅 메시지에 대해 스트리밍 형식으로 AI 응답을 반환합니다.
- * MCP 도구 호출 기능을 포함합니다.
- * @param modelNameOverride 클라이언트가 선택한 모델명 (없을 경우 기본값 사용)
+ * RepoInsight 스트리밍 응답 (자율 에이전트 핵심)
  */
 export const getAiChatStreamResponse = async (message: string, history: Content[] = [], repoContext?: string, modelNameOverride?: string) => {
     const targetModel = modelNameOverride || currentModelName;
-    console.log(`[geminiService] 스트리밍 수신 (최종 모델: ${targetModel}): "${message}"`);
-
     if (!genAI) throw new Error('API Key missing');
 
     try {
-        // 도구 정의 (Function Declaration)
         const tools = [
             {
                 functionDeclarations: [
                     {
                         name: "list_files",
                         description: "GitHub 저장소의 파일 및 디렉토리 목록을 가져옵니다.",
-                        parameters: {
-                            type: "object",
-                            properties: {
-                                path: { type: "string", description: "조회할 경로 (기본값: root)" }
-                            }
-                        }
+                        parameters: { type: "object", properties: { path: { type: "string", description: "조회 경로" } } }
                     },
                     {
                         name: "read_file",
                         description: "GitHub 저장소의 특정 파일 내용을 읽어옵니다.",
-                        parameters: {
-                            type: "object",
-                            properties: {
-                                path: { type: "string", description: "읽어올 파일의 전체 경로" }
-                            },
-                            required: ["path"]
-                        }
+                        parameters: { type: "object", properties: { path: { type: "string", description: "파일 경로" } }, required: ["path"] }
                     },
                     {
                         name: "read_pr_diff",
-                        description: "GitHub PR의 변경 사항(Diff)을 읽어옵니다. 코드 리뷰 시 필수적으로 사용하세요.",
-                        parameters: {
-                            type: "object",
-                            properties: {
-                                pull_number: { type: "number", description: "PR 번호" }
-                            },
-                            required: ["pull_number"]
-                        }
+                        description: "GitHub PR의 변경 사항을 읽어옵니다.",
+                        parameters: { type: "object", properties: { pull_number: { type: "number", description: "PR 번호" } }, required: ["pull_number"] }
                     }
                 ]
             }
         ];
 
         const model = genAI.getGenerativeModel({ 
-            model: targetModel, // 선택된 모델을 적용
+            model: targetModel,
             tools: tools as any,
-            systemInstruction: `당신은 Nura Health의 전문 AI 아키텍트입니다. 
+            systemInstruction: `당신은 RepoInsight의 전문 AI 아키텍트입니다. 
+            당신의 미션은 Git 기반 리포지토리를 대상으로 보안 취약점, 코드 품질, 기술부채, 진척도, 리스크를 종합 진단하는 것입니다.
             현재 분석 대상 저장소: ${repoContext || '선택되지 않음'}.
-            당신은 list_files와 read_file 도구를 사용하여 소스 코드를 직접 분석할 수 있습니다.
-            취약점 분석, 코드 리뷰, 아키텍처 개선 제안 등을 수행할 때 반드시 실제 코드를 읽고 답변하세요.`
+            반드시 list_files와 read_file 도구를 사용하여 실제 코드를 정밀 분석한 후 데이터를 기반으로 통찰력 있는 답변을 제공하세요.`
         });
         
         let sanitizedHistory = [...history];
-        if (sanitizedHistory.length > 0 && sanitizedHistory[0].role === 'model') {
-            sanitizedHistory.shift();
-        }
+        if (sanitizedHistory.length > 0 && sanitizedHistory[0].role === 'model') sanitizedHistory.shift();
 
         const chat = model.startChat({ history: sanitizedHistory });
         const result = await chat.sendMessageStream(message);
-        return result; // stream과 function calls 처리를 위해 result 전체 반환
+        return result;
     } catch (error: any) {
-        console.error('[geminiService] 스트리밍 오류:', error.message);
         throw error;
     }
 };

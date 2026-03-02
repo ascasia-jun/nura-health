@@ -82,8 +82,8 @@ export const Philosophy: React.FC = () => {
                 ></div>
             </div>
 
-            {/* Background Gradient */}
-            <div className="absolute inset-0 z-0 bg-gradient-to-b from-slate-950 via-cyan-950/10 to-slate-950"></div>
+            {/* Background Gradient & Parallax Layer */}
+            <div className="parallax-bg absolute inset-0 z-0 bg-gradient-to-b from-slate-950 via-cyan-950/10 to-slate-950"></div>
 
             <div className="relative z-10 w-full max-w-5xl mx-auto flex flex-col justify-center items-center text-center space-y-16 perspective-1000">
                 <div className="space-y-4">

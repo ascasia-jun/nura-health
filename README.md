@@ -1,64 +1,71 @@
-# Nura Health: AI-DLC Service
+# RepoInsight: Dev Lifecycle Intelligence Platform
 
-**Nura Health**는 정적인 컨셉 데모 사이트를 넘어, 실제 사용자 데이터와 상호작용하며 개인화된 AI 진단 및 처방을 제공하는 **동적 AI-DLC(Development Life-Cycle) 플랫폼**입니다.
+**RepoInsight**는 Git 리포지토리를 대상으로 보안 취약점, 코드 품질, 기술 부채, 진척도, 리스크를 종합 진단하는 **AI 기반 지능형 개발 생명주기 관리 플랫폼**입니다.
 
-## 🚀 주요 기능
+[![Project Level: Starter](https://img.shields.io/badge/Project%20Level-Starter-blue.svg)](https://github.com/popup-studio-ai/bkit-gemini)
+[![Stack: React 19 + Node.js](https://img.shields.io/badge/Stack-React%2019%20%2B%20Node.js-orange.svg)]()
 
-### 1. 📊 실시간 AI 대시보드 (`Features`)
-- **Diagnostic Shuffler:** 실시간으로 변동하는 AI 메트릭을 시각화합니다.
-- **Telemetry Typewriter:** 백엔드 API와 연동되어 실제 진단 데이터를 스트리밍합니다.
-- **Tier-based Access:** 멤버십 등급에 따라 고급 데이터 접근이 제한/해제됩니다.
+## 🚀 주요 기능 (Key Features)
 
-### 2. 🩺 AI 진단/처방 마법사 (`Protocols`)
-- 사용자가 프로젝트의 문제점을 입력하면, AI가 분석하여 맞춤형 해결 프로토콜을 제시합니다.
-- **Apex** 등급 전용 기능으로, 하위 등급에서는 잠금 화면이 표시됩니다.
+### 1. 자율형 AI ChatOps
+- **Multi-turn Agent Loop**: 최대 30회의 자율 사고 루프를 통해 복잡한 프로젝트 이슈를 스스로 분석하고 해결책을 제시합니다.
+- **Process Node Visualization**: AI의 사고 과정을 CLI 터미널 스타일로 실시간 시각화하여 분석의 투명성을 확보했습니다.
 
-### 3. 💬 AI 어시스턴트 (`AICompanionChat`)
-- 화면 우측 하단에 상주하는 대화형 AI 챗봇입니다.
-- 프로젝트 최적화, 에러 분석 등에 대한 실시간 질의응답을 제공합니다.
+### 2. 인터랙티브 컨텍스트 엔진
+- **Context Hook**: `GEMINI.md` 등 프로젝트 가이드를 한 번의 클릭으로 AI 컨텍스트에 주입합니다.
+- **Resource Attachment**: 특정 PR, Commit, 소스 코드를 배지 형태로 부착하여 정밀 타겟 분석을 수행합니다.
 
-### 4. 💎 동적 멤버십 시스템 (`Membership`)
-- **Baseline / Performance / Apex** 3단계 등급 시스템.
-- 사용자가 등급을 선택하면 즉시 전역 상태(`UserContext`)가 업데이트되어, 사이트 내 기능 접근 권한이 실시간으로 변경됩니다.
+### 3. 도메인 특화 Skills 시스템
+- `bkit-gemini` 철학을 계승한 전문 스킬셋을 장착하여 **보안 감사(Security Audit)**, **코드 리뷰**, **아키텍처 설계** 등 도메인별 최적화된 페르소나를 제공합니다.
 
----
+### 4. 실시간 텔레메트리 대시보드
+- 프로젝트의 핵심 지표를 시각화하고 AI가 실시간으로 건강 상태를 진단하여 최적화 프로토콜을 생성합니다.
 
-## 🛠️ 설치 및 실행 방법
+## 🛠 기술 스택 (Tech Stack)
 
-이 프로젝트는 **Frontend(React)**와 **Backend(Node.js)**로 구성되어 있습니다. 두 서버를 모두 실행해야 정상적으로 작동합니다.
+### Frontend
+- **Framework**: React 19 (Vite)
+- **Language**: TypeScript
+- **Styling**: Tailwind CSS 4
+- **Animation**: GSAP (ScrollTrigger)
+- **Icons**: Lucide React
 
-### 1. 백엔드 서버 실행 (Port: 3001)
+### Backend
+- **Runtime**: Node.js (Express)
+- **AI Engine**: Google Gemini 1.5/2.0 API
+- **Integration**: GitHub API (Octokit 스타일 커스텀 서비스)
+
+## 📦 설치 및 실행 (Setup)
+
+### 1. 환경 변수 설정
+`backend/.env` 파일을 생성하고 다음 정보를 입력합니다.
+```env
+GEMINI_API_KEY=your_google_gemini_api_key
+GITHUB_TOKEN=your_github_personal_access_token
+PORT=3001
+```
+
+### 2. 백엔드 서버 실행
 ```bash
 cd backend
 npm install
 npm run dev
 ```
 
-You can also install [eslint-plugin-react-x](https://github.com/Rel1cx/eslint-react/tree/main/packages/plugins/eslint-plugin-react-x) and [eslint-plugin-react-dom](https://github.com/Rel1cx/eslint-react/tree/main/packages/plugins/eslint-plugin-react-dom) for React-specific lint rules:
-
-```js
-// eslint.config.js
-import reactX from 'eslint-plugin-react-x'
-import reactDom from 'eslint-plugin-react-dom'
-
-export default defineConfig([
-  globalIgnores(['dist']),
-  {
-    files: ['**/*.{ts,tsx}'],
-    extends: [
-      // Other configs...
-      // Enable lint rules for React
-      reactX.configs['recommended-typescript'],
-      // Enable lint rules for React DOM
-      reactDom.configs.recommended,
-    ],
-    languageOptions: {
-      parserOptions: {
-        project: ['./tsconfig.node.json', './tsconfig.app.json'],
-        tsconfigRootDir: import.meta.dirname,
-      },
-      // other options...
-    },
-  },
-])
+### 3. 프론트엔드 서버 실행
+```bash
+npm install
+npm run dev
 ```
+
+## 📂 프로젝트 구조 (Structure)
+- `src/`: 프론트엔드 소스 코드 (React 컴포넌트, 훅, 컨텍스트)
+- `backend/`: Express 기반 백엔드 및 AI 에이전트 로직
+  - `src/skills/`: 마크다운 기반의 전문 AI 스킬 정의서
+- `docs/`: PDCA 방법론에 기반한 설계 및 결과 산출물
+  - `01-plan/`: 기능별 기획 문서
+  - `02-design/`: 아키텍처 및 UI 설계서
+  - `04-report/`: 최종 완료 보고서
+
+---
+© 2026 RepoInsight Autonomous Lab. Powered by POPUP STUDIO.

@@ -1,75 +1,92 @@
-import React, { useRef } from 'react';
+import React, { useEffect, useRef } from 'react';
 import gsap from 'gsap';
-import { useGSAP } from '@gsap/react';
+import { Sparkles, Terminal, Shield, Zap, TrendingUp, AlertTriangle } from 'lucide-react';
 
 export const Hero: React.FC = () => {
-    const container = useRef<HTMLDivElement>(null);
+    const heroRef = useRef<HTMLDivElement>(null);
+    const titleRef = useRef<HTMLHeadingElement>(null);
+    const badgeRef = useRef<HTMLDivElement>(null);
 
-    useGSAP(() => {
-        // Simple and Stable Entrance
-        gsap.fromTo('.hero-content', 
-            { autoAlpha: 0, y: 20 },
-            { autoAlpha: 1, y: 0, duration: 1.2, ease: 'power2.out', delay: 0.2 }
-        );
+    useEffect(() => {
+        const ctx = gsap.context(() => {
+            gsap.from(badgeRef.current, {
+                y: -20,
+                opacity: 0,
+                duration: 0.8,
+                ease: 'power3.out'
+            });
 
-        // Subtle Background Animation (No Flickering)
-        gsap.to('.bg-glow', {
-            scale: 1.1,
-            duration: 10,
-            repeat: -1,
-            yoyo: true,
-            ease: 'sine.inOut'
-        });
-    }, { scope: container });
+            gsap.from(titleRef.current?.children || [], {
+                y: 40,
+                opacity: 0,
+                duration: 1,
+                stagger: 0.2,
+                ease: 'power4.out',
+                delay: 0.2
+            });
+
+            gsap.from('.hero-stats > div', {
+                scale: 0.8,
+                opacity: 0,
+                duration: 0.8,
+                stagger: 0.1,
+                ease: 'back.out(1.7)',
+                delay: 0.8
+            });
+        }, heroRef);
+
+        return () => ctx.revert();
+    }, []);
 
     return (
-        <section
-            ref={container}
-            className="relative w-full h-[100dvh] flex items-center justify-center overflow-hidden bg-slate-950 select-none"
-        >
-            {/* Minimalist Background */}
-            <div className="absolute inset-0 z-0 overflow-hidden pointer-events-none">
-                <div className="bg-glow absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[800px] h-[800px] bg-cyan-500/10 blur-[120px] rounded-full"></div>
-                <div className="absolute inset-0 bg-[radial-gradient(circle_at_center,transparent_0%,rgba(2,6,23,0.8)_100%)]"></div>
+        <section ref={heroRef} className="relative min-h-screen flex items-center justify-center pt-20 overflow-hidden">
+            {/* Background Effects */}
+            <div className="absolute inset-0 z-0">
+                <div className="absolute top-1/4 left-1/4 w-96 h-96 bg-cyan-500/10 rounded-full blur-[120px] animate-pulse" />
+                <div className="absolute bottom-1/4 right-1/4 w-96 h-96 bg-indigo-500/10 rounded-full blur-[120px] animate-pulse" style={{ animationDelay: '1s' }} />
             </div>
 
-            {/* Simple & Powerful Content */}
-            <div className="hero-content relative z-10 text-center px-6 max-w-4xl opacity-0">
-                <div className="mb-6">
-                    <span className="text-cyan-500 font-mono text-[10px] font-bold tracking-[0.5em] uppercase opacity-70">
-                        Autonomous Health Engine
-                    </span>
+            <div className="container mx-auto px-6 relative z-10 text-center">
+                <div ref={badgeRef} className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-cyan-500/10 border border-cyan-500/20 text-cyan-400 text-xs font-bold tracking-widest uppercase mb-8 shadow-[0_0_20px_rgba(6,182,212,0.15)]">
+                    <Sparkles size={14} className="animate-pulse" />
+                    AI-Powered Dev Lifecycle Intelligence
                 </div>
-                
-                <h1 className="text-6xl md:text-8xl font-black text-white tracking-tighter leading-none mb-8">
-                    NURA HEALTH
+
+                <h1 ref={titleRef} className="text-5xl md:text-8xl font-black mb-8 tracking-tighter leading-none">
+                    <span className="block text-white">RETAINS CODE</span>
+                    <span className="block bg-gradient-to-r from-cyan-400 via-indigo-400 to-cyan-400 bg-clip-text text-transparent bg-[length:200%_auto] animate-gradient-x">REPOINSIGHT</span>
                 </h1>
 
-                <p className="text-lg md:text-xl text-slate-400 font-light leading-relaxed tracking-wide mb-12 max-w-2xl mx-auto">
-                    복잡함을 걷어내고 <strong className="text-white font-medium">데이터 본연의 가치</strong>에 집중합니다. <br className="hidden md:block" />
-                    실시간 AI 진단으로 프로젝트의 새로운 기준을 세우세요.
+                <p className="max-w-3xl mx-auto text-lg md:text-xl text-slate-400 mb-12 leading-relaxed font-light">
+                    Git 기반 리포지토리를 대상으로 <span className="text-cyan-400 font-medium">보안 취약점 · 코드 품질 · 기술부채 · 진척도 · 리스크</span>를 
+                    종합 진단하는 AI 기반 지능형 플랫폼입니다. 개발 생명주기의 모든 단계를 데이터로 시각화하고 최적화하세요.
                 </p>
-                
-                <div className="flex flex-wrap items-center justify-center gap-6">
-                    <a 
-                        href="#tools" 
-                        className="px-10 py-5 bg-white text-slate-950 rounded-full font-bold text-xs uppercase tracking-widest hover:bg-cyan-400 transition-all duration-300 shadow-xl shadow-white/5"
-                    >
-                        Get Started
-                    </a>
-                    <button className="px-10 py-5 bg-transparent text-slate-300 border border-white/10 rounded-full font-semibold text-xs uppercase tracking-widest hover:bg-white/5 transition-all">
-                        Documentation
-                    </button>
-                </div>
-            </div>
 
-            {/* Static Telemetry Info */}
-            <div className="absolute bottom-12 inset-x-0 flex justify-center items-center gap-12 text-[9px] font-mono text-slate-600 uppercase tracking-[0.3em] opacity-50">
-                <div className="flex items-center gap-2">
-                    <span className="w-1 h-1 bg-cyan-500 rounded-full"></span>
-                    System Online
+                <div className="flex flex-wrap justify-center gap-4 mb-20">
+                    <a href="#chatops" className="px-8 py-4 bg-cyan-500 text-slate-950 rounded-2xl font-bold text-lg hover:bg-white hover:scale-105 active:scale-95 transition-all shadow-[0_0_30px_rgba(6,182,212,0.3)]">
+                        Launch ChatOps
+                    </a>
+                    <a href="#features" className="px-8 py-4 bg-white/5 text-white border border-white/10 rounded-2xl font-bold text-lg hover:bg-white/10 transition-all backdrop-blur-sm">
+                        Explore Intelligence
+                    </a>
                 </div>
-                <div>v1.2.0-Stable</div>
+
+                {/* Core Diagnostic Metrics */}
+                <div className="hero-stats grid grid-cols-2 md:grid-cols-5 gap-4 max-w-5xl mx-auto">
+                    {[
+                        { icon: <Shield size={18} />, label: 'Security', val: 'Audit' },
+                        { icon: <Zap size={18} />, label: 'Quality', val: 'Clean' },
+                        { icon: <AlertTriangle size={18} />, label: 'Debt', val: 'Manage' },
+                        { icon: <TrendingUp size={18} />, label: 'Progress', val: 'Track' },
+                        { icon: <Terminal size={18} />, label: 'Risk', val: 'Analyze' },
+                    ].map((stat, i) => (
+                        <div key={i} className="p-6 rounded-2xl bg-white/5 border border-white/10 backdrop-blur-xl hover:border-cyan-500/30 transition-colors group">
+                            <div className="text-cyan-400 mb-3 flex justify-center group-hover:scale-110 transition-transform">{stat.icon}</div>
+                            <div className="text-[10px] text-slate-500 uppercase tracking-widest font-bold mb-1">{stat.label}</div>
+                            <div className="text-white font-mono font-bold">{stat.val}</div>
+                        </div>
+                    ))}
+                </div>
             </div>
         </section>
     );

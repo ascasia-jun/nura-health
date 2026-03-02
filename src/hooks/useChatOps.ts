@@ -1,266 +1,264 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { API_ENDPOINTS, API_URL } from '../config';
+import { CHAT_MODULE_LOADED } from '../types/chat';
+import type { ChatSession, Message, AIModel } from '../types/chat';
 
-export interface Message {
-    role: 'user' | 'ai';
-    content: string;
-}
+// 모듈 로드 보장
+if (!CHAT_MODULE_LOADED) console.warn('Chat types module not loaded');
 
-export interface AIModel {
-    name: string;
-    displayName: string;
-    description: string;
-}
-
-export interface ChatSession {
+/**
+ * 부착된 리소스의 타입을 정의합니다.
+ */
+export interface AttachedResource {
+    type: 'pr' | 'commit' | 'file';
     id: string;
-    title: string;
-    messages: Message[];
-    model: string;
-    timestamp: Date;
-    draftInput?: string; // 세션별 입력 중인 텍스트 보관
-    isLoading?: boolean; // 세션별 로딩 상태
+    name: string;
+    owner: string;
+    repo: string;
 }
 
-// API Service
-export const chatService = {
-    fetchModels: async () => {
-        const res = await fetch(`${API_URL}/api/models`);
-        return res.json();
-    },
-    selectModel: async (modelName: string) => {
-        return fetch(`${API_URL}/api/models/select`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ modelName }),
-        });
-    }
-};
-
+// 초기 안내 메시지
 const INITIAL_MESSAGE: Message = { 
-    role: 'ai', 
-    content: `# ChatOps 시스템 활성화\n프로젝트 상태를 실시간으로 분석하고 제어할 수 있는 AI 환경에 오신 것을 환영합니다.` 
+    id: 'initial',
+    role: 'assistant', 
+    parts: [{ 
+        type: 'text', 
+        content: `# RepoInsight ChatOps 시스템 활성화\n리포지토리 분석, 보안 취약점 점검, 코드 품질 리뷰 등 프로젝트 최적화 프로토콜을 제안해 드립니다.\n\n### 시작 가이드\n1. 오른쪽 사이드바에서 **분석할 저장소**를 선택하세요.\n2. 상단 툴바에서 필요한 **Skill**이나 **Context Hook**을 활성화하세요.\n3. 특정 PR이나 파일을 부착하여 정밀 분석을 요청할 수 있습니다.` 
+    }],
+    timestamp: new Date()
 };
 
+/**
+ * ChatOps 기능을 관리하는 커스텀 훅 (v3.1 - GitHub Insight Expansion)
+ */
 export const useChatOps = (initialModel: string = 'gemini-1.5-flash') => {
-
     const [messages, setMessages] = useState<Message[]>([INITIAL_MESSAGE]);
     const [models, setModels] = useState<AIModel[]>([]);
     const [currentModel, setCurrentModel] = useState<string>(initialModel);
     const [sessions, setSessions] = useState<ChatSession[]>([]);
     const [currentSessionId, setCurrentSessionId] = useState<string | null>(null);
     
-    // 현재 세션 ID 참조용 Ref
+    // --- 확장 기능 상태 ---
+    const [skills, setSkills] = useState<{id: string, name: string}[]>([]);
+    const [activeSkillId, setActiveSkillId] = useState<string | null>(null);
+    const [selectedHooks, setSelectedHooks] = useState<string[]>([]);
+    const [attachedResources, setAttachedResources] = useState<AttachedResource[]>([]);
+    
     const currentSessionIdRef = useRef<string | null>(null);
+    const isSendingRef = useRef<boolean>(false);
+
     useEffect(() => {
         currentSessionIdRef.current = currentSessionId;
     }, [currentSessionId]);
 
-    // 모델 목록 조회 및 초기 설정
+    // 초기화: 모델 및 스킬 로드
     useEffect(() => {
-        const loadModels = async () => {
+        const init = async () => {
             try {
-                const data = await chatService.fetchModels();
-                if (data.models && data.models.length > 0) {
-                    setModels(data.models);
-
-                    // 1. 백엔드에서 명시적으로 현재 모델(currentModel)을 알려주면 그것을 우선 사용
-                    // 2. 아니면 기존 currentModel이 목록에 있는지 확인
-                    // 3. 둘 다 아니면 목록의 첫 번째 모델을 선택
-                    if (data.currentModel) {
-                        setCurrentModel(data.currentModel);
-                    } else {
-                        const modelExists = data.models.some((m: AIModel) => m.name === currentModel);
-                        if (!modelExists) {
-                            setCurrentModel(data.models[0].name);
-                        }
-                    }
+                const mRes = await fetch(`${API_URL}/api/models`);
+                const mData = await mRes.json();
+                if (mData.models) {
+                    setModels(mData.models);
+                    if (mData.currentModel) setCurrentModel(mData.currentModel);
                 }
-            } catch (e) {
-                console.error('Failed to fetch models');
-            }
+                const sRes = await fetch(`${API_URL}/api/skills`);
+                const sData = await sRes.json();
+                if (sData.skills) setSkills(sData.skills);
+            } catch (e) { console.error('시스템 초기화 실패'); }
         };
-        loadModels();
-    }, []); // 초기 1회만 실행하여 동기화
+        init();
+    }, []);
 
-
-    // 새로운 세션 생성
     const createNewSession = useCallback(() => {
         const newId = Date.now().toString();
-        const newSession: ChatSession = {
-            id: newId,
-            title: 'New Analysis Session',
+        const newSession: ChatSession = { 
+            id: newId, 
+            title: 'New Analysis Session', 
             messages: [INITIAL_MESSAGE],
-            model: currentModel,
-            timestamp: new Date(),
-            draftInput: '',
-            isLoading: false
+            model: currentModel, 
+            timestamp: new Date(), 
+            draftInput: '', 
+            isLoading: false 
         };
-        
         setSessions(prev => [newSession, ...prev].slice(0, 20));
         setMessages([INITIAL_MESSAGE]);
         setCurrentSessionId(newId);
+        setSelectedHooks([]);
+        setAttachedResources([]);
     }, [currentModel]);
 
-    // 세션 로드 (입력창 상태 포함)
     const loadSession = useCallback((session: ChatSession, currentInput?: string) => {
-        // 현재 세션의 입력 내용을 저장하고 전환
         if (currentSessionId) {
-            setSessions(prev => prev.map(s => 
-                s.id === currentSessionId ? { ...s, draftInput: currentInput } : s
-            ));
+            setSessions(prev => prev.map(s => s.id === currentSessionId ? { ...s, draftInput: currentInput } : s));
         }
-
-        setMessages([...session.messages]);
+        setMessages([...(session.messages || [INITIAL_MESSAGE])]);
         setCurrentModel(session.model);
         setCurrentSessionId(session.id);
-        
         return session.draftInput || '';
     }, [currentSessionId]);
 
-    // 메시지 전송 (병렬 처리 지원)
-    const sendMessage = async (input: string, sessionId: string | null, selectedRepo?: any, onThinking?: (status: string | null) => void) => {
-        if (!input.trim()) return;
-        
-        let activeSessionId = sessionId;
-        if (!activeSessionId) {
-            const newId = Date.now().toString();
-            activeSessionId = newId;
-            const newSession: ChatSession = {
-                id: newId,
-                title: input.length > 20 ? input.substring(0, 20) + '...' : input,
-                messages: [INITIAL_MESSAGE], // sendMessage 내부에서는 초기 메시지 보장
-                model: currentModel,
-                timestamp: new Date(),
-                draftInput: '',
-                isLoading: false
-            };
-            setSessions(prev => [newSession, ...prev]);
-            setCurrentSessionId(newId);
-        }
+    // --- GitHub 리소스 제어 ---
 
-        // 해당 세션의 로딩 상태 활성화
-        setSessions(prev => prev.map(s => s.id === activeSessionId ? { ...s, isLoading: true, draftInput: '' } : s));
+    const toggleHook = (fileName: string) => {
+        setSelectedHooks(prev => prev.includes(fileName) ? prev.filter(h => h !== fileName) : [...prev, fileName]);
+    };
 
-        // 해당 세션의 현재 메시지 이력 가져오기
-        const targetSession = sessions.find(s => s.id === activeSessionId);
-        const baseMessages = targetSession ? targetSession.messages : messages;
-        const newMessages: Message[] = [...baseMessages, { role: 'user', content: input }];
+    const toggleResource = (resource: AttachedResource) => {
+        setAttachedResources(prev => {
+            const exists = prev.find(r => r.type === resource.type && r.id === resource.id);
+            if (exists) return prev.filter(r => !(r.type === resource.type && r.id === resource.id));
+            return [...prev, resource];
+        });
+    };
+
+    const removeResource = (type: string, id: string) => {
+        setAttachedResources(prev => prev.filter(r => !(r.type === type && r.id === id)));
+    };
+
+    const hookFileContext = async (fileName: string) => {
+        try {
+            const res = await fetch(`${API_URL}/api/context/hook?fileName=${fileName}`);
+            const data = await res.json();
+            return data.content || '';
+        } catch (e) { return ''; }
+    };
+
+    /**
+     * 스트리밍 데이터 파싱 및 상태 업데이트
+     */
+    const parseStreamChunk = useCallback((rawData: string, targetId: string) => {
+        try {
+            const parsed = JSON.parse(rawData);
+            if (parsed.done) return true;
+            const type = parsed.type === 'answer' ? 'text' : 'thought';
+            const content = parsed.type === 'answer' ? parsed.text : parsed.content;
+
+            setMessages(prev => {
+                const updatedMessages = [...prev];
+                const last = updatedMessages[updatedMessages.length - 1];
+                if (!last || last.role !== 'assistant') return prev;
+                if (!last.parts) last.parts = [];
+
+                if (type === 'text') {
+                    const lastPart = last.parts[last.parts.length - 1];
+                    if (lastPart && lastPart.type === 'text') {
+                        if (!lastPart.content.endsWith(content)) lastPart.content += content;
+                    } else {
+                        last.parts.push({ type: 'text', content });
+                    }
+                } else {
+                    const targetPart = [...last.parts].reverse().find(p => 
+                        p.type === 'thought' && 
+                        !p.content?.startsWith('Completed:') && 
+                        !p.content?.startsWith('Failed:')
+                    );
+                    if (targetPart && content && (content.startsWith('Completed:') || content.startsWith('Failed:') || content.includes('Analyzing'))) {
+                        targetPart.content = content;
+                    } else if (content && !last.parts.some(p => p.type === 'thought' && p.content === content)) {
+                        last.parts.push({ type: 'thought', content });
+                    }
+                }
+                setSessions(sPrev => sPrev.map(s => s.id === targetId ? { ...s, messages: updatedMessages } : s));
+                return updatedMessages;
+            });
+        } catch (e) {}
+        return false;
+    }, []);
+
+    const sendMessage = useCallback(async (input: string, sessionId: string | null, selectedRepo?: any) => {
+        if (!input.trim() || isSendingRef.current) return;
         
-        // 현재 보고 있는 세션이면 UI 업데이트
-        if (currentSessionIdRef.current === activeSessionId) {
-            setMessages(newMessages);
-        }
+        isSendingRef.current = true;
+        let activeId: string = sessionId || Date.now().toString();
 
         try {
-            // [Optimization] Sliding Window strategy for context efficiency
-            const CONTEXT_WINDOW_LIMIT = 10;
-            const historyMessages = newMessages.slice(-CONTEXT_WINDOW_LIMIT);
-            
-            // Zero Script QA Log
-            console.log(JSON.stringify({
-                event: 'chat.context_optimized',
-                originalCount: newMessages.length,
-                optimizedCount: historyMessages.length,
-                windowLimit: CONTEXT_WINDOW_LIMIT,
-                timestamp: new Date().toISOString()
-            }));
+            const hookTags = selectedHooks.map(h => `@${h}`).join(' ');
+            const resTags = attachedResources.map(r => `@${r.type.toUpperCase()}:${r.name}`).join(' ');
+            const displayInput = [hookTags, resTags, input].filter(Boolean).join('\n');
 
-            let history = historyMessages.map(msg => ({
-                role: msg.role === 'user' ? 'user' : 'model',
-                parts: [{ text: msg.content }]
-            }));
-
-            if (history.length > 0 && history[0].role === 'model') {
-                history.shift();
+            if (!sessionId) {
+                const newSession: ChatSession = { id: activeId, title: input.substring(0, 30), messages: [INITIAL_MESSAGE], model: currentModel, timestamp: new Date(), draftInput: '', isLoading: true };
+                setSessions(prev => [newSession, ...prev]);
+                setCurrentSessionId(activeId);
+            } else {
+                setSessions(prev => prev.map(s => s.id === activeId ? { ...s, isLoading: true, title: s.title === 'New Analysis Session' ? input.substring(0, 30) : s.title } : s));
             }
+
+            const targetSession = sessions.find(s => s.id === activeId);
+            const baseMessages = targetSession?.messages || messages;
+            
+            const userMsg: Message = { id: Date.now().toString(), role: 'user', parts: [{ type: 'text', content: displayInput }], timestamp: new Date() };
+            const aiMsg: Message = { id: (Date.now() + 1).toString(), role: 'assistant', parts: [], timestamp: new Date(), model: currentModel };
+
+            const nextMessages: Message[] = [...(baseMessages || [INITIAL_MESSAGE]), userMsg, aiMsg];
+            setMessages(nextMessages);
+
+            let hookContext = '';
+            if (selectedHooks.length > 0) {
+                const contents = await Promise.all(selectedHooks.map(async h => {
+                    const c = await hookFileContext(h);
+                    return `[FILE: ${h}]\n${c}`;
+                }));
+                hookContext = contents.join('\n\n');
+            }
+
+            const history = nextMessages
+                .filter(m => (m.parts || []).some(p => p.type === 'text' && p.content.trim() !== ''))
+                .slice(-15)
+                .map(m => ({
+                    role: m.role === 'user' ? 'user' : 'model',
+                    parts: (m.parts || []).filter(p => p.type === 'text' && p.content.trim() !== '').map(p => ({ text: p.content }))
+                }));
+
+            if (history.length > 0 && history[0].role === 'model') history.shift();
 
             const res = await fetch(API_ENDPOINTS.CHAT_STREAM, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ message: input, history, model: currentModel, selectedRepo }),
+                body: JSON.stringify({ 
+                    message: hookContext ? `${hookContext}\n\n---\n\n${input}` : input, 
+                    history, 
+                    model: currentModel, 
+                    selectedRepo, 
+                    activeSkillId,
+                    attachedResources
+                }),
             });
 
-            if (!res.ok) throw new Error('Streaming failed');
+            setSelectedHooks([]);
+            setAttachedResources([]);
 
             const reader = res.body?.getReader();
             const decoder = new TextDecoder();
-            let accumulatedContent = '';
+            let lineBuffer = '';
 
             if (reader) {
                 while (true) {
                     const { done, value } = await reader.read();
                     if (done) break;
-
-                    const chunk = decoder.decode(value, { stream: true });
-                    const lines = chunk.split('\n');
-
+                    lineBuffer += decoder.decode(value, { stream: true });
+                    const lines = lineBuffer.split('\n');
+                    lineBuffer = lines.pop() || '';
                     for (const line of lines) {
-                        if (line.startsWith('data: ')) {
-                            const data = line.slice(6);
-                            if (data === '[DONE]') break; // 레거시 지원
-
-                            try {
-                                const parsed = JSON.parse(data);
-                                
-                                // 1. 전체 루프 종료 감지
-                                if (parsed.done) {
-                                    break;
-                                }
-
-                                // 2. AI의 답변 조각 처리
-                                if (parsed.type === 'answer' && parsed.text) {
-                                    if (onThinking) onThinking(null); // 답변 시작 시 생각 중 상태 해제
-                                    accumulatedContent += parsed.text;
-                                    const updatedMessages: Message[] = [...newMessages, { role: 'ai' as const, content: accumulatedContent }];
-
-                                    if (currentSessionIdRef.current === activeSessionId) {
-                                        setMessages(updatedMessages);
-                                    }
-                                    
-                                    setSessions(sPrev => sPrev.map(s => 
-                                        s.id === activeSessionId 
-                                            ? { 
-                                                ...s, 
-                                                messages: updatedMessages,
-                                                title: s.title === 'New Analysis Session' ? (input.length > 20 ? input.substring(0, 20) + '...' : input) : s.title
-                                              } 
-                                            : s
-                                    ));
-                                }
-
-                                // 3. AI의 생각 과정(도구 호출 중) 처리
-                                if (parsed.type === 'thought' && parsed.content) {
-                                    if (onThinking) onThinking(parsed.content);
-                                    console.log(`Agent Thinking: ${parsed.content}`);
-                                }
-                            } catch (e) {}
-                        }
+                        const trimmedLine = line.trim();
+                        if (!trimmedLine || !trimmedLine.startsWith('data: ')) continue;
+                        if (parseStreamChunk(trimmedLine.slice(6), activeId)) break;
                     }
                 }
             }
-        } catch (error) {
-            console.error('Chat error:', error);
-            if (currentSessionIdRef.current === activeSessionId) {
-                setMessages(prev => [...prev, { role: 'ai', content: '시스템 오류가 발생했습니다.' }]);
-            }
+        } catch (error) { 
+            console.error('전송 오류:', error);
         } finally {
-            if (onThinking) onThinking(null);
-            // 해당 세션의 로딩 상태 해제
-            setSessions(prev => prev.map(s => s.id === activeSessionId ? { ...s, isLoading: false } : s));
+            isSendingRef.current = false;
+            setSessions(prev => prev.map(s => s.id === activeId ? { ...s, isLoading: false } : s));
         }
-    };
+    }, [currentModel, sessions, parseStreamChunk, activeSkillId, selectedHooks, attachedResources, messages]);
 
-    return {
-        messages,
-        setMessages,
-        models,
-        currentModel,
-        setCurrentModel,
-        sessions,
-        currentSessionId,
-        createNewSession,
-        loadSession,
-        sendMessage
+    return { 
+        messages, setMessages, models, currentModel, setCurrentModel, 
+        sessions, currentSessionId, createNewSession, loadSession, sendMessage,
+        skills, activeSkillId, setActiveSkillId, 
+        selectedHooks, toggleHook,
+        attachedResources, toggleResource, removeResource
     };
 };
