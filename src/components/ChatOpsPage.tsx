@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect, useCallback, useMemo } from 'react';
-import { Send, Bot, LogOut, Sparkles, Code, Terminal, MessageSquare, Plus, Settings, RotateCcw, User, ChevronDown, Loader2, Github, X, FileText, Zap, Hash, ExternalLink, GitPullRequest, GitMerge, FileCode, Folder, ChevronRight, Search, Check, Eye, Mail, Download } from 'lucide-react';
+import { Send, Bot, LogOut, Sparkles, Code, Terminal, MessageSquare, Plus, Settings, RotateCcw, User, ChevronDown, Loader2, Github, X, FileText, Zap, Hash, ExternalLink, GitPullRequest, GitMerge, FileCode, Folder, ChevronRight, Search, Check, Eye, Mail, Download, Edit2, Box, Wrench } from 'lucide-react';
 import { useUser } from '../context/UserContext';
 import { API_URL } from '../config';
 import { SettingsModal } from './SettingsModal';
@@ -12,7 +12,7 @@ import { ContentPreviewModal } from './Chat/ContentPreviewModal';
 type SidebarTab = 'PR' | 'Push' | 'Code';
 
 export const ChatOpsPage: React.FC = () => {
-    const { user, logout } = useUser();
+    const { logout } = useUser();
     const [input, setInput] = useState('');
     const [sidebarSearch, setSidebarSearch] = useState('');
     const [isModelListOpen, setIsModelListOpen] = useState(false);
@@ -22,6 +22,10 @@ export const ChatOpsPage: React.FC = () => {
     const [isRightSidebarOpen, setIsRightSidebarOpen] = useState(true);
     const [activeTab, setActiveTab] = useState<SidebarTab>('PR');
     
+    // [v3.6] 세션 편집 상태
+    const [editingSessionId, setEditingSessionId] = useState<string | null>(null);
+    const [editTitleValue, setEditTitleValue] = useState('');
+
     const [isPreviewOpen, setIsPreviewOpen] = useState(false);
     const [previewContent, setPreviewContent] = useState('');
     const [previewTitle, setPreviewTitle] = useState('');
@@ -41,13 +45,13 @@ export const ChatOpsPage: React.FC = () => {
 
     const {
         messages, models, currentModel, setCurrentModel, sessions, currentSessionId, createNewSession, loadSession, sendMessage, setMessages,
+        updateSessionTitle,
         skills, activeSkillId, setActiveSkillId, selectedHooks, toggleHook, attachedResources, toggleResource, removeResource
     } = useChatOps();
 
     const isCurrentSessionLoading = sessions.find(s => s.id === currentSessionId)?.isLoading || false;
 
-    // --- 데이터 로드 로직 ---
-
+    // 데이터 로드 로직
     const fetchRepositories = useCallback(async () => {
         setIsRepoLoading(true);
         try {
@@ -149,17 +153,11 @@ export const ChatOpsPage: React.FC = () => {
         } catch (e) { setPreviewContent('콘텐츠를 불러오는 중 오류가 발생했습니다.'); } finally { setIsPreviewLoading(false); }
     };
 
-    // [v3.5] 분석 결과 내보내기 핸들러
     const handleExportWord = (content: string) => {
         const repoName = selectedRepo?.name || 'RepoInsight';
         const date = new Date().toLocaleDateString();
         const fullContent = `# RepoInsight Analysis Report\n\n- **Project**: ${repoName}\n- **Date**: ${date}\n\n---\n\n${content}`;
-        
-        // 브라우저 단에서 Word 형식으로 인식하게 하는 최소한의 HTML 래핑
-        const html = `
-            <html xmlns:o='urn:schemas-microsoft-com:office:office' xmlns:w='urn:schemas-microsoft-com:office:word' xmlns='http://www.w3.org/TR/REC-html40'>
-            <head><meta charset='utf-8'></head><body>${fullContent.replace(/\n/g, '<br>')}</body></html>
-        `;
+        const html = `<html xmlns:o='urn:schemas-microsoft-com:office:office' xmlns:w='urn:schemas-microsoft-com:office:word' xmlns='http://www.w3.org/TR/REC-html40'><head><meta charset='utf-8'></head><body>${fullContent.replace(/\n/g, '<br>')}</body></html>`;
         const blob = new Blob(['\ufeff', html], { type: 'application/msword' });
         const url = URL.createObjectURL(blob);
         const link = document.createElement('a');
@@ -184,9 +182,21 @@ export const ChatOpsPage: React.FC = () => {
         return skill ? skill.name : id.toUpperCase();
     };
 
+    // [v3.6] 세션 제목 편집 처리
+    const startEditing = (e: React.MouseEvent, id: string, title: string) => {
+        e.stopPropagation();
+        setEditingSessionId(id);
+        setEditTitleValue(title);
+    };
+
+    const saveTitle = (id: string) => {
+        if (editTitleValue.trim()) updateSessionTitle(id, editTitleValue.trim());
+        setEditingSessionId(null);
+    };
+
     return (
         <div className="flex h-screen bg-slate-950 text-slate-200 font-sans overflow-hidden">
-            {/* 왼쪽 사이드바 */}
+            {/* 왼쪽 사이드바 (Session Management) */}
             <aside className="w-72 bg-slate-900/50 border-r border-white/5 flex flex-col hidden md:flex backdrop-blur-xl">
                 <div className="p-6 flex items-center gap-3 border-b border-white/5">
                     <div className="w-8 h-8 bg-cyan-500 rounded-lg flex items-center justify-center text-slate-900 shadow-[0_0_15px_rgba(6,182,212,0.5)]"><Bot size={20} /></div>
@@ -206,10 +216,29 @@ export const ChatOpsPage: React.FC = () => {
                 <div className="flex-1 overflow-y-auto p-4 space-y-2 custom-scrollbar">
                     <button onClick={createNewSession} className="w-full flex items-center gap-3 px-4 py-3 bg-cyan-500/10 text-cyan-400 rounded-xl border border-cyan-500/20 hover:bg-cyan-500/20 transition-all text-sm font-medium mb-6"><Plus size={16} /><span>New Analysis Session</span></button>
                     {(sessions || []).map(s => (
-                        <button key={s.id} onClick={() => setInput(loadSession(s, input))} className={`w-full flex items-center justify-between gap-3 px-4 py-2 rounded-lg transition-colors text-sm text-left truncate ${currentSessionId === s.id ? 'bg-cyan-500/10 text-cyan-400 border border-cyan-500/20' : 'text-slate-400 hover:bg-white/5'}`}>
-                            <div className="flex items-center gap-3 truncate"><MessageSquare size={14} /><span className="truncate">{s.title}</span></div>
-                            {s.isLoading && <Loader2 size={12} className="animate-spin text-cyan-400" />}
-                        </button>
+                        <div key={s.id} className="relative group/session">
+                            {editingSessionId === s.id ? (
+                                <input 
+                                    autoFocus
+                                    value={editTitleValue}
+                                    onChange={(e) => setEditTitleValue(e.target.value)}
+                                    onBlur={() => saveTitle(s.id)}
+                                    onKeyDown={(e) => { if (e.key === 'Enter') saveTitle(s.id); if (e.key === 'Escape') setEditingSessionId(null); }}
+                                    className="w-full px-4 py-2 bg-slate-800 text-white rounded-lg border border-cyan-500/50 outline-none text-sm"
+                                />
+                            ) : (
+                                <button onClick={() => setInput(loadSession(s, input))} className={`w-full flex items-center justify-between gap-3 px-4 py-2 rounded-lg transition-colors text-sm text-left truncate ${currentSessionId === s.id ? 'bg-cyan-500/10 text-cyan-400 border border-cyan-500/20' : 'text-slate-400 hover:bg-white/5'}`}>
+                                    <div className="flex items-center gap-3 truncate">
+                                        <MessageSquare size={14} className="shrink-0" />
+                                        <span className="truncate">{s.title}</span>
+                                    </div>
+                                    <div className="flex items-center gap-2">
+                                        <Edit2 size={12} className="opacity-0 group-hover/session:opacity-100 hover:text-white transition-all shrink-0" onClick={(e) => startEditing(e, s.id, s.title)} />
+                                        {s.isLoading && <Loader2 size={12} className="animate-spin text-cyan-400 shrink-0" />}
+                                    </div>
+                                </button>
+                            )}
+                        </div>
                     ))}
                 </div>
                 <div className="p-4 border-t border-white/5 space-y-2">
@@ -232,7 +261,6 @@ export const ChatOpsPage: React.FC = () => {
                                 {msg.role === 'assistant' && (msg.parts?.length || 0) > 0 && (
                                     <div className="w-10 h-10 rounded-xl bg-cyan-500/10 text-cyan-400 flex items-center justify-center shrink-0 mt-1 border border-cyan-500/20 shadow-lg"><Bot size={20} /></div>
                                 )}
-                                
                                 <div className={`max-w-[85%] md:max-w-[80%] rounded-2xl p-0 overflow-hidden flex flex-col gap-1 ${msg.role === 'user' ? 'bg-transparent items-end' : ''}`}>
                                     {msg.role === 'user' ? (
                                         <div className="bg-slate-900/40 backdrop-blur-xl border border-white/10 rounded-2xl rounded-tr-none shadow-2xl overflow-hidden flex flex-col">
@@ -244,20 +272,14 @@ export const ChatOpsPage: React.FC = () => {
                                                         </span>
                                                     )}
                                                     {msg.meta.selectedHooks?.map(h => (
-                                                        <span key={h} className="flex items-center gap-1.5 px-2 py-0.5 bg-cyan-500/20 text-cyan-400 border border-cyan-500/30 rounded text-[9px] font-black uppercase">
-                                                            <FileCode size={10} /> {h}
-                                                        </span>
+                                                        <span key={h} className="flex items-center gap-1.5 px-2 py-0.5 bg-cyan-500/20 text-cyan-400 border border-cyan-500/30 rounded text-[9px] font-black uppercase"><FileCode size={10} /> {h}</span>
                                                     ))}
                                                     {msg.meta.attachedResources?.map((r: any) => (
-                                                        <span key={`${r.type}-${r.id}`} className="flex items-center gap-1.5 px-2 py-0.5 bg-indigo-500/20 text-indigo-400 border border-indigo-500/30 rounded text-[9px] font-black uppercase">
-                                                            <Hash size={10} /> {r.name}
-                                                        </span>
+                                                        <span key={`${r.type}-${r.id}`} className="flex items-center gap-1.5 px-2 py-0.5 bg-indigo-500/20 text-indigo-400 border border-indigo-500/30 rounded text-[9px] font-black uppercase"><Hash size={10} /> {r.name}</span>
                                                     ))}
                                                 </div>
                                             )}
-                                            <div className="p-5 md:p-8 text-sm md:text-base text-slate-100 leading-relaxed">
-                                                <MarkdownRenderer content={msg.parts?.[0]?.content || ''} />
-                                            </div>
+                                            <div className="p-5 md:p-8 text-sm md:text-base text-slate-100 leading-relaxed"><MarkdownRenderer content={msg.parts?.[0]?.content || ''} /></div>
                                         </div>
                                     ) : (
                                         <div className={`relative flex flex-col gap-1 ${isDone ? 'final-report' : ''}`}>
@@ -269,7 +291,6 @@ export const ChatOpsPage: React.FC = () => {
                                                     </div>
                                                 </div>
                                             )}
-
                                             {msg.parts?.map((part, pIdx) => {
                                                 if (part.type === 'thought') {
                                                     const isProcessNode = part.content.startsWith('Completed:') || part.content.startsWith('Executing');
@@ -278,33 +299,14 @@ export const ChatOpsPage: React.FC = () => {
                                                 }
                                                 const isLastMsg = idx === messages.length - 1;
                                                 const isActualLastPart = isLastMsg && pIdx === actualLastTextPartIdx;
-                                                
                                                 return (
                                                     <div key={pIdx} className="relative group/msg">
                                                         <div className={`p-5 md:p-8 text-sm md:text-base leading-relaxed shadow-xl bg-slate-900/40 text-slate-200 border border-white/10 rounded-2xl rounded-tl-none backdrop-blur-sm`}>
-                                                            <MarkdownRenderer 
-                                                                content={part.content} 
-                                                                collapsible={!isActualLastPart} 
-                                                                defaultCollapsed={!isActualLastPart && isDone} 
-                                                            />
-                                                            
-                                                            {/* [v3.5] 최종 리포트 내보내기 액션 (텍스트 파트 하단) */}
+                                                            <MarkdownRenderer content={part.content} collapsible={!isActualLastPart} defaultCollapsed={!isActualLastPart && isDone} />
                                                             {isDone && isActualLastPart && (
                                                                 <div className="flex justify-end gap-3 mt-8 pt-6 border-t border-white/5">
-                                                                    <button 
-                                                                        onClick={() => handleExportWord(part.content)}
-                                                                        className="flex items-center gap-2 px-3 py-1.5 bg-white/5 hover:bg-white/10 border border-white/10 rounded-lg text-[10px] font-black text-slate-400 hover:text-cyan-400 transition-all uppercase tracking-tighter"
-                                                                        title="Word로 내보내기"
-                                                                    >
-                                                                        <FileText size={14} /> Export Word
-                                                                    </button>
-                                                                    <button 
-                                                                        onClick={() => handleSendEmail(part.content)}
-                                                                        className="flex items-center gap-2 px-3 py-1.5 bg-white/5 hover:bg-white/10 border border-white/10 rounded-lg text-[10px] font-black text-slate-400 hover:text-amber-400 transition-all uppercase tracking-tighter"
-                                                                        title="이메일로 보내기"
-                                                                    >
-                                                                        <Mail size={14} /> Send Email
-                                                                    </button>
+                                                                    <button onClick={() => handleExportWord(part.content)} className="flex items-center gap-2 px-3 py-1.5 bg-white/5 hover:bg-white/10 border border-white/10 rounded-lg text-[10px] font-black text-slate-400 hover:text-cyan-400 transition-all uppercase tracking-tighter" title="Word로 내보내기"><FileText size={14} /> Export Word</button>
+                                                                    <button onClick={() => handleSendEmail(part.content)} className="flex items-center gap-2 px-3 py-1.5 bg-white/5 hover:bg-white/10 border border-white/10 rounded-lg text-[10px] font-black text-slate-400 hover:text-amber-400 transition-all uppercase tracking-tighter" title="이메일로 보내기"><Mail size={14} /> Send Email</button>
                                                                 </div>
                                                             )}
                                                         </div>
@@ -314,7 +316,6 @@ export const ChatOpsPage: React.FC = () => {
                                         </div>
                                     )}
                                 </div>
-                                
                                 {msg.role === 'user' && (
                                     <div className="w-10 h-10 rounded-xl bg-white/5 text-slate-400 flex items-center justify-center shrink-0 mt-1 border border-white/10 shadow-lg"><User size={20} /></div>
                                 )}
@@ -325,7 +326,7 @@ export const ChatOpsPage: React.FC = () => {
                     <div ref={messagesEndRef} />
                 </div>
 
-                {/* 입력창 및 툴바 영역 */}
+                {/* 입력창 영역 */}
                 <div className="p-6 md:p-10 bg-slate-900/60 backdrop-blur-3xl border-t border-white/5 space-y-4">
                     <div className="max-w-4xl mx-auto flex flex-col gap-4 px-2">
                         <div className="flex items-center gap-3">
@@ -346,20 +347,13 @@ export const ChatOpsPage: React.FC = () => {
                                                         <Zap size={10} className={activeSkillId === s.id ? 'text-amber-400' : 'text-slate-600 group-hover:text-amber-400'} />
                                                         <span className="text-[10px] font-bold truncate pr-4 leading-none">{s.name}</span>
                                                     </button>
-                                                    <button 
-                                                        onClick={(e) => { e.stopPropagation(); handleOpenPreview('skill', s.id, s.name); }}
-                                                        className="absolute right-2 top-1/2 -translate-y-1/2 p-1.5 text-slate-600 hover:text-cyan-400 opacity-0 group-hover/item:opacity-100 transition-all"
-                                                        title="미리보기"
-                                                    >
-                                                        <Eye size={12} />
-                                                    </button>
+                                                    <button onClick={(e) => { e.stopPropagation(); handleOpenPreview('skill', s.id, s.name); }} className="absolute right-2 top-1/2 -translate-y-1/2 p-1.5 text-slate-600 hover:text-cyan-400 opacity-0 group-hover/item:opacity-100 transition-all"><Eye size={12} /></button>
                                                 </div>
                                             ))}
                                         </div>
                                     </div>
                                 )}
                             </div>
-
                             <div className="relative">
                                 <button onClick={() => { setIsHookListOpen(!isHookListOpen); setIsSkillListOpen(false); }} className={`flex items-center gap-1.5 px-4 py-2 border rounded-xl text-[11px] font-black transition-all uppercase tracking-widest ${selectedHooks?.length > 0 ? 'bg-cyan-500/20 border-cyan-500/40 text-cyan-400 shadow-[0_0_15px_rgba(6,182,212,0.2)]' : 'bg-white/5 border-white/10 text-slate-400 hover:text-cyan-400'}`}>
                                     <Hash size={14} /> Context Hooks {selectedHooks?.length > 0 && `(${selectedHooks.length})`}
@@ -376,42 +370,26 @@ export const ChatOpsPage: React.FC = () => {
                                                         <span className="text-[10px] font-bold truncate pr-4">{fileName}</span>
                                                         {selectedHooks?.includes(fileName) && <Check size={12} className="text-cyan-400" />}
                                                     </button>
-                                                    <button 
-                                                        onClick={(e) => { e.stopPropagation(); handleOpenPreview('hook', fileName, fileName); }}
-                                                        className="absolute right-8 top-1/2 -translate-y-1/2 p-1.5 text-slate-600 hover:text-cyan-400 opacity-0 group-hover/item:opacity-100 transition-all"
-                                                        title="미리보기"
-                                                    >
-                                                        <Eye size={12} />
-                                                    </button>
+                                                    <button onClick={(e) => { e.stopPropagation(); handleOpenPreview('hook', fileName, fileName); }} className="absolute right-8 top-1/2 -translate-y-1/2 p-1.5 text-slate-600 hover:text-cyan-400 opacity-0 group-hover/item:opacity-100 transition-all"><Eye size={12} /></button>
                                                 </div>
                                             ))}
                                         </div>
                                     </div>
                                 )}
                             </div>
-
                             <div className="flex-1" />
                             {(activeSkillId || (selectedHooks?.length || 0) > 0) && (
-                                <button onClick={resetAllSelections} className="flex items-center gap-1.5 px-3 py-2 text-slate-500 hover:text-red-400 transition-colors text-[10px] font-bold uppercase tracking-tighter">
-                                    <RotateCcw size={12} /> Reset All
-                                </button>
+                                <button onClick={resetAllSelections} className="flex items-center gap-1.5 px-3 py-2 text-slate-500 hover:text-red-400 transition-colors text-[10px] font-bold uppercase tracking-tighter"><RotateCcw size={12} /> Reset All</button>
                             )}
                         </div>
 
-                        {/* Selected Context Bar */}
                         {(selectedHooks?.length > 0 || attachedResources?.length > 0) && (
                             <div className="flex flex-wrap gap-2 py-2 px-1 animate-in fade-in slide-in-from-bottom-1 duration-300">
                                 {selectedHooks.map(h => (
-                                    <span key={h} className="flex items-center gap-1.5 px-2.5 py-1 bg-cyan-500/10 text-cyan-400 border border-cyan-500/20 rounded-lg text-[9px] font-black uppercase">
-                                        <FileCode size={10} /> {h}
-                                        <X size={10} className="cursor-pointer hover:text-white" onClick={() => toggleHook(h)} />
-                                    </span>
+                                    <span key={h} className="flex items-center gap-1.5 px-2.5 py-1 bg-cyan-500/10 text-cyan-400 border border-cyan-500/20 rounded-lg text-[9px] font-black uppercase"><FileCode size={10} /> {h}<X size={10} className="cursor-pointer hover:text-white" onClick={() => toggleHook(h)} /></span>
                                 ))}
                                 {attachedResources.map(r => (
-                                    <span key={`${r.type}-${r.id}`} className="flex items-center gap-1.5 px-2.5 py-1 bg-indigo-500/10 text-indigo-400 border border-indigo-500/20 rounded-lg text-[9px] font-black uppercase">
-                                        <Hash size={10} /> {r.name}
-                                        <X size={10} className="cursor-pointer hover:text-white" onClick={() => removeResource(r.type, r.id)} />
-                                    </span>
+                                    <span key={`${r.type}-${r.id}`} className="flex items-center gap-1.5 px-2.5 py-1 bg-indigo-500/10 text-indigo-400 border border-indigo-500/20 rounded-lg text-[9px] font-black uppercase"><Hash size={10} /> {r.name}<X size={10} className="cursor-pointer hover:text-white" onClick={() => removeResource(r.type, r.id)} /></span>
                                 ))}
                             </div>
                         )}
@@ -437,74 +415,109 @@ export const ChatOpsPage: React.FC = () => {
             <SettingsModal isOpen={isSettingsOpen} onClose={() => setIsSettingsOpen(false)} currentModel={currentModel} />
             <ContentPreviewModal isOpen={isPreviewOpen} onClose={() => setIsPreviewOpen(false)} title={previewTitle} content={previewContent} isLoading={isPreviewLoading} />
 
-            {/* 오른쪽 사이드바 (기존 유지) */}
+            {/* 오른쪽 사이드바 (Analysis & Tools) */}
             {isRightSidebarOpen && (
                 <aside className="w-80 bg-slate-900/50 border-l border-white/5 flex flex-col backdrop-blur-xl animate-in slide-in-from-right duration-300">
+                    {/* Repository Header */}
                     <div className="p-6 border-b border-white/5">
                         <div className="flex items-center justify-between mb-4">
                             <div className="flex items-center gap-2"><Github size={18} className="text-slate-400" /><span className="font-bold text-sm text-slate-100">Repositories</span></div>
                             <button onClick={fetchRepositories} className="p-1.5 hover:bg-cyan-500/10 rounded-lg text-slate-500"><RotateCcw size={14} className={isRepoLoading ? 'animate-spin' : ''} /></button>
                         </div>
-                        <div className="relative">
-                            <select onChange={(e) => setSelectedRepo(repositories.find(r => r.id === Number(e.target.value)))} className="w-full bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-xs text-slate-300 appearance-none" value={selectedRepo?.id || ''}>
-                                <option value="">Select a repository...</option>
-                                {repositories.map(repo => <option key={repo.id} value={repo.id}>{repo.name}</option>)}
-                            </select>
-                            <ChevronDown size={14} className="absolute right-3 top-2.5 text-slate-500 pointer-events-none" />
+                        <div className="flex items-center gap-2">
+                            <div className="relative flex-1">
+                                <select onChange={(e) => setSelectedRepo(repositories.find(r => r.id === Number(e.target.value)))} className="w-full bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-xs text-slate-300 appearance-none pr-8" value={selectedRepo?.id || ''}>
+                                    <option value="">Select a repository...</option>
+                                    {repositories.map(repo => <option key={repo.id} value={repo.id}>{repo.name}</option>)}
+                                </select>
+                                <ChevronDown size={14} className="absolute right-3 top-2.5 text-slate-500 pointer-events-none" />
+                            </div>
+                            <button 
+                                onClick={handleAnalyzeSourceCode} 
+                                disabled={!selectedRepo || isCurrentSessionLoading}
+                                className="p-2.5 bg-cyan-500 text-slate-950 rounded-lg hover:bg-white transition-all shadow-glow disabled:opacity-30 disabled:cursor-not-allowed"
+                                title="Analyze whole repository"
+                            >
+                                <Sparkles size={16} />
+                            </button>
                         </div>
                     </div>
+
                     {selectedRepo ? (
                         <div className="flex-1 flex flex-col min-h-0">
-                            <div className="flex border-b border-white/5 bg-black/20">
-                                {(['PR', 'Push', 'Code'] as SidebarTab[]).map(tab => (
-                                    <button key={tab} onClick={() => { setActiveTab(tab); setSidebarSearch(''); }} className={`flex-1 py-3 text-[10px] font-black uppercase tracking-widest transition-all border-b-2 ${activeTab === tab ? 'border-cyan-500 text-cyan-400 bg-cyan-500/5' : 'border-transparent text-slate-500'}`}>{tab}</button>
-                                ))}
-                            </div>
-                            <div className="px-3 py-2 border-b border-white/5 bg-white/5">
-                                <div className="relative"><Search size={12} className="absolute left-3 top-2.5 text-slate-600" /><input type="text" placeholder={`Filter ${activeTab}...`} value={sidebarSearch} onChange={(e) => setSidebarSearch(e.target.value)} className="w-full bg-black/20 border border-white/5 rounded-full pl-8 pr-4 py-1.5 text-[10px] text-slate-300 focus:outline-none" /></div>
-                            </div>
-                            <div className="flex-1 overflow-y-auto custom-scrollbar p-3 space-y-2">
-                                {isDataLoading ? <div className="flex flex-col items-center justify-center h-full opacity-30 gap-2"><Loader2 size={24} className="animate-spin" /></div> : (
-                                    <div className="flex flex-col gap-2">
-                                        {activeTab === 'PR' && (filteredItems || []).map(pr => (
-                                            <button key={pr.id} onClick={() => handleResourceToggle('pr', pr)} className={`w-full p-3 bg-white/5 border rounded-xl group transition-all text-left flex flex-col gap-2 hover:bg-white/10 ${attachedResources.find(r => r.type === 'pr' && r.id === String(pr.number)) ? 'border-indigo-500 bg-indigo-500/10 shadow-[0_0_15px_rgba(99,102,241,0.2)]' : 'border-white/5'}`}>
-                                                <div className="flex justify-between items-start gap-2">
-                                                    <span className={`text-xs font-bold transition-colors uppercase flex-1 line-clamp-2 ${attachedResources.find(r => r.type === 'pr' && r.id === String(pr.number)) ? 'text-indigo-400' : 'text-slate-200 group-hover:text-cyan-400'}`}>{pr.title}</span>
-                                                    <a href={pr.html_url} target="_blank" rel="noreferrer" onClick={(e) => e.stopPropagation()} className="p-1 hover:bg-white/10 rounded text-slate-500 shrink-0"><ExternalLink size={12} /></a>
-                                                </div>
-                                                <div className="flex items-center justify-between text-[9px] font-mono opacity-50"><span>#{pr.number} by {pr.user?.login}</span><span className={`px-1.5 py-0.5 rounded ${pr.state === 'open' ? 'bg-emerald-500/20 text-emerald-400' : 'bg-slate-500/20 text-slate-400'}`}>{pr.state}</span></div>
-                                            </button>
-                                        ))}
-                                        {activeTab === 'Push' && (filteredItems || []).map(commit => (
-                                            <button key={commit.sha} onClick={() => handleResourceToggle('commit', commit)} className={`w-full p-3 bg-white/5 border rounded-xl group transition-all text-left flex flex-col gap-1 hover:bg-white/10 ${attachedResources.find(r => r.type === 'commit' && r.id === commit.sha) ? 'border-indigo-500 bg-indigo-500/10 shadow-[0_0_15px_rgba(99,102,241,0.2)]' : 'border-white/5'}`}>
-                                                <div className="flex justify-between items-start gap-2">
-                                                    <span className={`text-xs font-bold transition-colors flex-1 line-clamp-2 ${attachedResources.find(r => r.type === 'commit' && r.id === commit.sha) ? 'text-indigo-400' : 'text-slate-200 group-hover:text-cyan-400'}`}>{commit.commit.message}</span>
-                                                    <a href={commit.html_url} target="_blank" rel="noreferrer" onClick={(e) => e.stopPropagation()} className="p-1 hover:bg-white/10 rounded text-slate-500 shrink-0"><ExternalLink size={12} /></a>
-                                                </div>
-                                                <div className="flex items-center justify-between text-[9px] font-mono opacity-50"><span>{commit.sha.substring(0, 7)}</span><span>{new Date(commit.commit.author.date).toLocaleDateString()}</span></div>
-                                            </button>
-                                        ))}
-                                        {activeTab === 'Code' && (filteredItems || []).map(file => {
-                                            const depth = file.path.split('/').length - 1;
-                                            const name = file.path.split('/').pop();
-                                            const isAttached = attachedResources.find(r => r.type === 'file' && r.id === file.path);
-                                            return (
-                                                <button key={file.path} onClick={() => file.type === 'blob' && handleResourceToggle('file', file)} className={`w-full group flex items-center justify-between gap-2 p-2 rounded-lg transition-all hover:bg-white/10 ${isAttached ? 'bg-indigo-500/10 border border-indigo-500/30 shadow-[0_0_10px_rgba(99,102,241,0.1)]' : ''}`} style={{ marginLeft: `${depth * 8}px`, width: `calc(100% - ${depth * 8}px)` }}>
-                                                    <div className={`flex-1 flex items-center gap-2 truncate text-left ${isAttached ? 'text-indigo-400 font-black' : 'text-slate-400 group-hover:text-slate-200'}`}>
-                                                        {file.type === 'tree' ? <Folder size={12} className="text-cyan-500 shrink-0" /> : <FileCode size={12} className="text-slate-500 shrink-0" />}
-                                                        <span className="text-[11px] truncate font-mono">{name}</span>
+                            {/* Tabs Area (Middle 2/3 approx) */}
+                            <div className="flex-1 flex flex-col min-h-0">
+                                <div className="flex border-b border-white/5 bg-black/20">
+                                    {(['PR', 'Push', 'Code'] as SidebarTab[]).map(tab => (
+                                        <button key={tab} onClick={() => { setActiveTab(tab); setSidebarSearch(''); }} className={`flex-1 py-3 text-[10px] font-black uppercase tracking-widest transition-all border-b-2 ${activeTab === tab ? 'border-cyan-500 text-cyan-400 bg-cyan-500/5' : 'border-transparent text-slate-500'}`}>{tab}</button>
+                                    ))}
+                                </div>
+                                <div className="px-3 py-2 border-b border-white/5 bg-white/5">
+                                    <div className="relative"><Search size={12} className="absolute left-3 top-2.5 text-slate-600" /><input type="text" placeholder={`Filter ${activeTab}...`} value={sidebarSearch} onChange={(e) => setSidebarSearch(e.target.value)} className="w-full bg-black/20 border border-white/5 rounded-full pl-8 pr-4 py-1.5 text-[10px] text-slate-300 focus:outline-none" /></div>
+                                </div>
+                                <div className="flex-1 overflow-y-auto custom-scrollbar p-3">
+                                    {isDataLoading ? <div className="flex flex-col items-center justify-center h-full opacity-30 gap-2"><Loader2 size={24} className="animate-spin" /></div> : (
+                                        <div className="flex flex-col gap-1.5">
+                                            {activeTab === 'PR' && (filteredItems || []).map(pr => (
+                                                <button key={pr.id} onClick={() => handleResourceToggle('pr', pr)} className={`w-full p-3 bg-white/5 border rounded-xl group transition-all text-left flex flex-col gap-2 hover:bg-white/10 ${attachedResources.find(r => r.type === 'pr' && r.id === String(pr.number)) ? 'border-indigo-500 bg-indigo-500/10 shadow-[0_0_15px_rgba(99,102,241,0.2)]' : 'border-white/5'}`}>
+                                                    <div className="flex justify-between items-start gap-2">
+                                                        <span className={`text-xs font-bold transition-colors uppercase flex-1 line-clamp-2 ${attachedResources.find(r => r.type === 'pr' && r.id === String(pr.number)) ? 'text-indigo-400' : 'text-slate-200 group-hover:text-cyan-400'}`}>{pr.title}</span>
+                                                        <a href={pr.html_url} target="_blank" rel="noreferrer" onClick={(e) => e.stopPropagation()} className="p-1 hover:bg-white/10 rounded text-slate-500 shrink-0"><ExternalLink size={12} /></a>
                                                     </div>
-                                                    <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                                                        {file.type === 'blob' && <button className={`p-1 rounded ${isAttached ? 'bg-red-500/20 text-red-400' : 'bg-cyan-500/20 text-cyan-500'}`}>{isAttached ? <X size={10} /> : <Plus size={10} />}</button>}
-                                                    </div>
+                                                    <div className="flex items-center justify-between text-[9px] font-mono opacity-50"><span>#{pr.number} by {pr.user?.login}</span><span className={`px-1.5 py-0.5 rounded ${pr.state === 'open' ? 'bg-emerald-500/20 text-emerald-400' : 'bg-slate-500/20 text-slate-400'}`}>{pr.state}</span></div>
                                                 </button>
-                                            );
-                                        })}
-                                    </div>
-                                )}
+                                            ))}
+                                            {activeTab === 'Push' && (filteredItems || []).map(commit => (
+                                                <button key={commit.sha} onClick={() => handleResourceToggle('commit', commit)} className={`w-full p-3 bg-white/5 border rounded-xl group transition-all text-left flex flex-col gap-1 hover:bg-white/10 ${attachedResources.find(r => r.type === 'commit' && r.id === commit.sha) ? 'border-indigo-500 bg-indigo-500/10 shadow-[0_0_15px_rgba(99,102,241,0.2)]' : 'border-white/5'}`}>
+                                                    <div className="flex justify-between items-start gap-2">
+                                                        <span className={`text-xs font-bold transition-colors flex-1 line-clamp-2 ${attachedResources.find(r => r.type === 'commit' && r.id === commit.sha) ? 'text-indigo-400' : 'text-slate-200 group-hover:text-cyan-400'}`}>{commit.commit.message}</span>
+                                                        <a href={commit.html_url} target="_blank" rel="noreferrer" onClick={(e) => e.stopPropagation()} className="p-1 hover:bg-white/10 rounded text-slate-500 shrink-0"><ExternalLink size={12} /></a>
+                                                    </div>
+                                                    <div className="flex items-center justify-between text-[9px] font-mono opacity-50"><span>{commit.sha.substring(0, 7)}</span><span>{new Date(commit.commit.author.date).toLocaleDateString()}</span></div>
+                                                </button>
+                                            ))}
+                                            {activeTab === 'Code' && (filteredItems || []).map(file => {
+                                                const depth = file.path.split('/').length - 1;
+                                                const name = file.path.split('/').pop();
+                                                const isAttached = attachedResources.find(r => r.type === 'file' && r.id === file.path);
+                                                return (
+                                                    <button key={file.path} onClick={() => file.type === 'blob' && handleResourceToggle('file', file)} className={`w-full group flex items-center justify-between gap-2 py-0.5 px-2 rounded-lg transition-all hover:bg-white/10 ${isAttached ? 'bg-indigo-500/10 border border-indigo-500/30' : ''}`} style={{ marginLeft: `${depth * 8}px`, width: `calc(100% - ${depth * 8}px)` }}>
+                                                        <div className={`flex-1 flex items-center gap-2 truncate text-left ${isAttached ? 'text-indigo-400 font-black' : 'text-slate-400 group-hover:text-slate-200'}`}>
+                                                            {file.type === 'tree' ? <Folder size={10} className="text-cyan-500 shrink-0" /> : <FileCode size={10} className="text-slate-500 shrink-0" />}
+                                                            <span className="text-[10px] truncate font-mono">{name}</span>
+                                                        </div>
+                                                        {file.type === 'blob' && <div className={`w-1.5 h-1.5 rounded-full ${isAttached ? 'bg-indigo-500' : 'bg-transparent'}`} />}
+                                                    </button>
+                                                );
+                                            })}
+                                        </div>
+                                    )}
+                                </div>
                             </div>
-                            <div className="p-4 border-t border-white/5 bg-cyan-500/5">
-                                <button onClick={handleAnalyzeSourceCode} disabled={isCurrentSessionLoading} className="w-full py-3 bg-cyan-500 text-slate-950 rounded-xl font-bold text-[10px] uppercase tracking-widest shadow-[0_0_20px_rgba(6,182,212,0.3)]">Analyze Source Code</button>
+
+                            {/* [v3.6] MCP 도구 목록 섹션 (Bottom 1/3) */}
+                            <div className="h-1/3 bg-black/40 border-t border-white/10 flex flex-col">
+                                <div className="p-4 border-b border-white/5 flex items-center gap-2 bg-white/5">
+                                    <Wrench size={14} className="text-amber-400" />
+                                    <span className="text-[10px] font-black text-slate-300 uppercase tracking-[0.2em]">Available MCP Tools</span>
+                                </div>
+                                <div className="flex-1 overflow-y-auto p-4 custom-scrollbar">
+                                    <div className="grid grid-cols-1 gap-2">
+                                        {[
+                                            { name: 'grep_search', desc: 'Global text search' },
+                                            { name: 'glob', desc: 'Pattern-based file listing' },
+                                            { name: 'read_many_files', desc: 'Batch file reading' },
+                                            { name: 'list_files', desc: 'Directory exploration' },
+                                            { name: 'read_file', desc: 'Precise code reading' },
+                                            { name: 'read_pr_diff', desc: 'PR change analysis' }
+                                        ].map(tool => (
+                                            <div key={tool.name} className="p-2 rounded-lg bg-white/5 border border-white/5 group hover:border-amber-500/30 transition-all">
+                                                <div className="text-[10px] font-bold text-slate-200 mb-0.5 font-mono">{tool.name}</div>
+                                                <div className="text-[9px] text-slate-500 font-light leading-tight">{tool.desc}</div>
+                                            </div>
+                                        ))}
+                                    </div>
+                                </div>
                             </div>
                         </div>
                     ) : (

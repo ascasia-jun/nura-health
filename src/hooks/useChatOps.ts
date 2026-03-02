@@ -29,7 +29,7 @@ const INITIAL_MESSAGE: Message = {
 };
 
 /**
- * ChatOps 기능을 관리하는 커스텀 훅 (v3.5 - Auto-Skill UI Sync)
+ * ChatOps 기능을 관리하는 커스텀 훅 (v3.6 - Sidebar Refinement Support)
  */
 export const useChatOps = (initialModel: string = 'gemini-1.5-flash') => {
     const [messages, setMessages] = useState<Message[]>([INITIAL_MESSAGE]);
@@ -89,6 +89,13 @@ export const useChatOps = (initialModel: string = 'gemini-1.5-flash') => {
         return session.draftInput || '';
     }, [currentSessionId]);
 
+    /**
+     * [v3.6] 세션 제목을 업데이트합니다.
+     */
+    const updateSessionTitle = useCallback((sessionId: string, newTitle: string) => {
+        setSessions(prev => prev.map(s => s.id === sessionId ? { ...s, title: newTitle } : s));
+    }, []);
+
     const toggleHook = (fileName: string) => {
         setSelectedHooks(prev => prev.includes(fileName) ? prev.filter(h => h !== fileName) : [...prev, fileName]);
     };
@@ -135,22 +142,15 @@ export const useChatOps = (initialModel: string = 'gemini-1.5-flash') => {
             const type = parsed.type === 'answer' ? 'text' : 'thought';
             const content = parsed.type === 'answer' ? parsed.text : parsed.content;
 
-            // [v3.5] 자동 스킬 활성화 신호 감지 및 사용자 말풍선 UI 동기화
             if (type === 'thought' && content.startsWith('Auto-activating skill: ')) {
                 const skillId = content.replace('Auto-activating skill: ', '').trim();
-                
-                // 1. 현재 툴바 상태 업데이트
                 setActiveSkillId(skillId);
-
-                // 2. 이미 렌더링된 사용자 메시지의 메타데이터 소급 업데이트
                 setMessages(prev => {
                     const next = [...prev];
-                    // 역순으로 탐색하여 가장 최근의 사용자 메시지를 찾음
                     for (let i = next.length - 1; i >= 0; i--) {
                         if (next[i].role === 'user') {
                             if (!next[i].meta) next[i].meta = {};
-                            // @ts-ignore
-                            next[i].meta.activeSkillId = skillId;
+                            next[i].meta!.activeSkillId = skillId;
                             break;
                         }
                     }
@@ -288,6 +288,7 @@ export const useChatOps = (initialModel: string = 'gemini-1.5-flash') => {
     return { 
         messages, setMessages, models, currentModel, setCurrentModel, 
         sessions, currentSessionId, createNewSession, loadSession, sendMessage,
+        updateSessionTitle, // [추가]
         skills, activeSkillId, setActiveSkillId, 
         selectedHooks, toggleHook,
         attachedResources, toggleResource, removeResource
