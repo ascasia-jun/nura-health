@@ -2,13 +2,11 @@ import { useState, useEffect, useCallback, useRef } from 'react';
 import { API_ENDPOINTS, API_URL } from '../config';
 import { CHAT_MODULE_LOADED } from '../types/chat';
 import type { ChatSession, Message, AIModel } from '../types/chat';
+import { useUser } from '../context/UserContext';
 
 // 모듈 로드 보장
 if (!CHAT_MODULE_LOADED) console.warn('Chat types module not loaded');
 
-/**
- * 부착된 리소스의 타입을 정의합니다. (v3.7 - folder 타입 추가)
- */
 export interface AttachedResource {
     type: 'pr' | 'commit' | 'file' | 'folder';
     id: string;
@@ -17,7 +15,6 @@ export interface AttachedResource {
     repo: string;
 }
 
-// 초기 안내 메시지
 const INITIAL_MESSAGE: Message = { 
     id: 'initial',
     role: 'assistant', 
@@ -29,9 +26,10 @@ const INITIAL_MESSAGE: Message = {
 };
 
 /**
- * ChatOps 기능을 관리하는 커스텀 훅 (v3.7 - UI Upgrade Support)
+ * ChatOps 기능을 관리하는 커스텀 훅 (v3.7 - Database Integration)
  */
 export const useChatOps = (initialModel: string = 'gemini-1.5-flash') => {
+    const { user } = useUser(); // 사용자 정보 획득
     const [messages, setMessages] = useState<Message[]>([INITIAL_MESSAGE]);
     const [models, setModels] = useState<AIModel[]>([]);
     const [currentModel, setCurrentModel] = useState<string>(initialModel);
@@ -46,50 +44,85 @@ export const useChatOps = (initialModel: string = 'gemini-1.5-flash') => {
     const currentSessionIdRef = useRef<string | null>(null);
     const isSendingRef = useRef<boolean>(false);
 
-    useEffect(() => {
-        currentSessionIdRef.current = currentSessionId;
-    }, [currentSessionId]);
+    useEffect(() => { currentSessionIdRef.current = currentSessionId; }, [currentSessionId]);
 
-    // 초기화: 모델 및 스킬 로드
+    // 공통 요청 헤더 (사용자 ID 포함)
+    const getHeaders = useCallback(() => ({
+        'Content-Type': 'application/json',
+        'x-user-id': user?.id || ''
+    }), [user]);
+
+    // 초기화: 모델, 스킬, 그리고 세션 목록 로드
     useEffect(() => {
         const init = async () => {
+            if (!user) return;
             try {
+                // 1. 모델 로드
                 const mRes = await fetch(`${API_URL}/api/models`);
                 const mData = await mRes.json();
                 if (mData.models) {
                     setModels(mData.models);
                     if (mData.currentModel) setCurrentModel(mData.currentModel);
                 }
+                
+                // 2. 스킬 로드
                 const sRes = await fetch(`${API_URL}/api/skills`);
                 const sData = await sRes.json();
                 if (sData.skills) setSkills(sData.skills);
+
+                // 3. 세션 목록 로드 (DB 연동)
+                const sessRes = await fetch(`${API_URL}/api/sessions`, { headers: getHeaders() as any });
+                const sessData = await sessRes.json();
+                if (sessData.sessions) setSessions(sessData.sessions);
             } catch (e) { console.error('시스템 초기화 실패'); }
         };
         init();
-    }, []);
+    }, [user, getHeaders]);
 
-    const createNewSession = useCallback(() => {
-        const newId = Date.now().toString();
-        const newSession: ChatSession = { id: newId, title: 'New Analysis Session', messages: [INITIAL_MESSAGE], model: currentModel, timestamp: new Date(), draftInput: '', isLoading: false };
-        setSessions(prev => [newSession, ...prev].slice(0, 20));
-        setMessages([INITIAL_MESSAGE]);
-        setCurrentSessionId(newId);
-        setSelectedHooks([]);
-        setAttachedResources([]);
-        setActiveSkillId(null);
-    }, [currentModel]);
+    const createNewSession = useCallback(async () => {
+        if (!user) return;
+        const title = 'New Analysis Session';
+        try {
+            const res = await fetch(`${API_URL}/api/sessions`, {
+                method: 'POST',
+                headers: getHeaders() as any,
+                body: JSON.stringify({ title, model: currentModel })
+            });
+            const data = await res.json();
+            if (data.success) {
+                const newId = data.sessionId;
+                const newSession: ChatSession = { id: newId, title, messages: [INITIAL_MESSAGE], model: currentModel, timestamp: new Date(), isLoading: false };
+                setSessions(prev => [newSession, ...prev]);
+                setMessages([INITIAL_MESSAGE]);
+                setCurrentSessionId(newId);
+                setSelectedHooks([]);
+                setAttachedResources([]);
+                setActiveSkillId(null);
+            }
+        } catch (e) { console.error('세션 생성 실패'); }
+    }, [user, currentModel, getHeaders]);
 
-    const loadSession = useCallback((session: ChatSession, currentInput?: string) => {
+    const loadSession = useCallback(async (session: ChatSession, currentInput?: string) => {
         if (currentSessionId) {
             setSessions(prev => prev.map(s => s.id === currentSessionId ? { ...s, draftInput: currentInput } : s));
         }
-        setMessages([...(session.messages || [INITIAL_MESSAGE])]);
+        
+        try {
+            // 메시지 이력 로드 (DB 연동)
+            const res = await fetch(`${API_URL}/api/sessions/${session.id}/messages`, { headers: getHeaders() as any });
+            const data = await res.json();
+            setMessages(data.messages?.length > 0 ? data.messages : [INITIAL_MESSAGE]);
+        } catch (e) {
+            setMessages([INITIAL_MESSAGE]);
+        }
+
         setCurrentModel(session.model);
         setCurrentSessionId(session.id);
         return session.draftInput || '';
-    }, [currentSessionId]);
+    }, [currentSessionId, getHeaders]);
 
-    const updateSessionTitle = useCallback((sessionId: string, newTitle: string) => {
+    const updateSessionTitle = useCallback(async (sessionId: string, newTitle: string) => {
+        // [v3.7 Todo] 백엔드에 제목 수정 API 추가 시 연동
         setSessions(prev => prev.map(s => s.id === sessionId ? { ...s, title: newTitle } : s));
     }, []);
 
@@ -180,17 +213,27 @@ export const useChatOps = (initialModel: string = 'gemini-1.5-flash') => {
     }, []);
 
     const sendMessage = useCallback(async (input: string, sessionId: string | null, selectedRepo?: any) => {
-        if (!input.trim() || isSendingRef.current) return;
+        if (!input.trim() || isSendingRef.current || !user) return;
         isSendingRef.current = true;
-        let activeId: string = sessionId || Date.now().toString();
+        let activeId: string = sessionId || '';
 
         try {
-            if (!sessionId) {
-                const newSession: ChatSession = { id: activeId, title: input.substring(0, 30), messages: [INITIAL_MESSAGE], model: currentModel, timestamp: new Date(), draftInput: '', isLoading: true };
+            // [v3.7] 세션이 없는 경우 자동 생성 로직 (백엔드에 맞춰 수정)
+            if (!activeId) {
+                const res = await fetch(`${API_URL}/api/sessions`, {
+                    method: 'POST',
+                    headers: getHeaders() as any,
+                    body: JSON.stringify({ title: input.substring(0, 30), model: currentModel })
+                });
+                const data = await res.json();
+                if (data.success) activeId = data.sessionId;
+                else throw new Error('Session creation failed');
+                
+                const newSession: ChatSession = { id: activeId, title: input.substring(0, 30), messages: [INITIAL_MESSAGE], model: currentModel, timestamp: new Date(), isLoading: true };
                 setSessions(prev => [newSession, ...prev]);
                 setCurrentSessionId(activeId);
             } else {
-                setSessions(prev => prev.map(s => s.id === activeId ? { ...s, isLoading: true, title: s.title === 'New Analysis Session' ? input.substring(0, 30) : s.title } : s));
+                setSessions(prev => prev.map(s => s.id === activeId ? { ...s, isLoading: true } : s));
             }
 
             const targetSession = sessions.find(s => s.id === activeId);
@@ -220,8 +263,8 @@ export const useChatOps = (initialModel: string = 'gemini-1.5-flash') => {
 
             const res = await fetch(API_ENDPOINTS.CHAT_STREAM, {
                 method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ message: hookContext ? `${hookContext}\n\n---\n\n${input}` : input, history, model: currentModel, selectedRepo, activeSkillId, attachedResources }),
+                headers: getHeaders() as any,
+                body: JSON.stringify({ message: hookContext ? `${hookContext}\n\n---\n\n${input}` : input, history, model: currentModel, selectedRepo, activeSkillId, attachedResources, sessionId: activeId }),
             });
 
             setSelectedHooks([]);
@@ -248,7 +291,7 @@ export const useChatOps = (initialModel: string = 'gemini-1.5-flash') => {
             isSendingRef.current = false;
             setSessions(prev => prev.map(s => s.id === activeId ? { ...s, isLoading: false } : s));
         }
-    }, [currentModel, sessions, parseStreamChunk, activeSkillId, selectedHooks, attachedResources, messages]);
+    }, [user, currentModel, sessions, parseStreamChunk, activeSkillId, selectedHooks, attachedResources, messages, getHeaders]);
 
     return { 
         messages, setMessages, models, currentModel, setCurrentModel, 

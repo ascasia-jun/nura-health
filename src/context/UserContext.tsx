@@ -1,60 +1,92 @@
-import React, { createContext, useContext, useState, type ReactNode } from 'react';
+import React, { createContext, useContext, useState, useEffect } from 'react';
+import { API_URL } from '../config';
 
-// 멤버십 등급 타입 정의
-export type Tier = 'Free' | 'Baseline' | 'Performance' | 'Apex';
-
-interface User {
+/**
+ * 사용자 정보 인터페이스
+ */
+export interface User {
+    id: string;
     username: string;
+    name: string;
+    tier?: 'Baseline' | 'Performance' | 'Apex';
 }
 
-// UserContext의 상태 인터페이스 정의
 interface UserContextType {
-    user: User | null; // 현재 사용자 프로필
-    tier: Tier; // 현재 사용자의 멤버십 등급
-    setTier: (tier: Tier) => void; // 멤버십 등급을 변경하는 함수
-    login: (id: string, pw: string) => boolean; // 로그인 함수
-    logout: () => void; // 로그아웃 함수
-    isLoggedIn: boolean; // 로그인 여부
+    user: User | null;
+    isLoggedIn: boolean;
+    tier: 'Baseline' | 'Performance' | 'Apex';
+    login: (username: string, pw: string) => Promise<boolean>;
+    logout: () => void;
+    updateTier: (newTier: 'Baseline' | 'Performance' | 'Apex') => void;
 }
 
-// Context 생성 (초기값은 undefined)
 const UserContext = createContext<UserContextType | undefined>(undefined);
 
-// UserProvider 컴포넌트: 앱 전체에 사용자 상태를 공급합니다.
-export const UserProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
-    // 초기 상태는 'Free'로 설정하여 기능 잠금 상태를 시뮬레이션합니다.
+export const UserProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
     const [user, setUser] = useState<User | null>(null);
-    const [tier, setTier] = useState<Tier>('Free');
-    const [isLoggedIn, setIsLoggedIn] = useState(false);
+    const [tier, setTier] = useState<'Baseline' | 'Performance' | 'Apex'>('Baseline');
 
-    const login = (id: string, pw: string) => {
-        // 간단한 하드코딩 인증 로직 (데모용)
-        if (id === 'admin' && pw === 'admin') {
-            setUser({ username: 'Admin User' });
-            setIsLoggedIn(true);
-            setTier('Apex'); // 로그인 시 최고 등급 부여
-            return true;
+    // 세션 유지 (Local Storage)
+    useEffect(() => {
+        const savedUser = localStorage.getItem('repoinsight_user');
+        if (savedUser) {
+            setUser(JSON.parse(savedUser));
+            const savedTier = localStorage.getItem('repoinsight_tier');
+            if (savedTier) setTier(savedTier as any);
         }
-        return false;
+    }, []);
+
+    const login = async (username: string, pw: string): Promise<boolean> => {
+        try {
+            const res = await fetch(`${API_URL}/api/auth/login`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ username, password: pw })
+            });
+
+            if (res.ok) {
+                const data = await res.json();
+                const userData: User = { 
+                    ...data.user, 
+                    tier: 'Apex' // 기본적으로 모든 기능을 사용할 수 있도록 고정 (또는 DB에서 가져옴)
+                };
+                setUser(userData);
+                setTier('Apex');
+                localStorage.setItem('repoinsight_user', JSON.stringify(userData));
+                localStorage.setItem('repoinsight_tier', 'Apex');
+                return true;
+            }
+            return false;
+        } catch (e) {
+            console.error('Login error:', e);
+            return false;
+        }
     };
 
     const logout = () => {
         setUser(null);
-        setIsLoggedIn(false);
-        setTier('Free');
+        setTier('Baseline');
+        localStorage.removeItem('repoinsight_user');
+        localStorage.removeItem('repoinsight_tier');
     };
 
+    const updateTier = (newTier: 'Baseline' | 'Performance' | 'Apex') => {
+        setTier(newTier);
+        localStorage.setItem('repoinsight_tier', newTier);
+    };
+
+    const isLoggedIn = !!user;
+
     return (
-        <UserContext.Provider value={{ user, tier, setTier, login, logout, isLoggedIn }}>
+        <UserContext.Provider value={{ user, isLoggedIn, tier, login, logout, updateTier }}>
             {children}
         </UserContext.Provider>
     );
 };
 
-// useUser 커스텀 훅: UserContext를 쉽게 사용할 수 있도록 합니다.
 export const useUser = () => {
     const context = useContext(UserContext);
-    if (!context) {
+    if (context === undefined) {
         throw new Error('useUser must be used within a UserProvider');
     }
     return context;
