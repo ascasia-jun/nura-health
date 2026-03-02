@@ -174,7 +174,7 @@ router.get('/github/repos/:owner/:repo/pulls', async (req: Request, res: Respons
     const token = await getUserToken(userId);
     if (!token) return res.status(500).json({ error: 'Token missing' });
     try {
-        const pulls = await githubService.listPullRequests(token, owner, repo);
+        const pulls = await githubService.fetchPullRequests(token, owner, repo);
         res.json({ pulls });
     } catch (error: any) { res.status(500).json({ error: error.message }); }
 });
@@ -185,7 +185,7 @@ router.get('/github/repos/:owner/:repo/commits', async (req: Request, res: Respo
     const token = await getUserToken(userId);
     if (!token) return res.status(500).json({ error: 'Token missing' });
     try {
-        const commits = await githubService.listCommits(token, owner, repo);
+        const commits = await githubService.fetchCommits(token, owner, repo);
         res.json({ commits });
     } catch (error: any) { res.status(500).json({ error: error.message }); }
 });
