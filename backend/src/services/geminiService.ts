@@ -3,21 +3,24 @@ import dotenv from 'dotenv';
 
 dotenv.config();
 
-// 기본 설정
-let currentModelName = "gemini-1.5-flash";
+// [v3.8] 공식 서비스용 최신 표준 모델로 기본값 변경
+let currentModelName = "gemini-2.0-flash";
 
 /**
  * AI 응답을 생성하기 위한 제네레이티브 모델 인스턴스를 가져옵니다.
- * [v3.8] 사용자별 API Key를 지원하도록 개선되었습니다.
  */
 const getModel = (modelName: string = currentModelName, userApiKey?: string) => {
-    // 사용자 키가 있으면 사용, 없으면 환경변수 키 사용
     const apiKey = userApiKey || process.env.GEMINI_API_KEY;
     if (!apiKey) throw new Error("GEMINI_API_KEY is missing.");
 
     const genAI = new GoogleGenerativeAI(apiKey);
+    
+    // [v3.8] 구형 모델 요청 시 최신 표준 모델로 자동 폴백
+    const deprecatedModels = ["gemini-1.5-flash", "gemini-1.5-pro", "gemini-2.0-flash-exp"];
+    const targetModel = deprecatedModels.includes(modelName) ? "gemini-2.0-flash" : modelName;
+
     return genAI.getGenerativeModel({
-        model: modelName,
+        model: targetModel,
         generationConfig: {
             temperature: 0.7,
             topK: 40,
@@ -49,18 +52,19 @@ export const getAiChatStreamResponse = async (prompt: string, history: any[], co
     return await chat.sendMessageStream(fullPrompt);
 };
 
+/**
+ * [v3.8] 공식 지원 모델 라인업 정문화
+ */
 export const listAvailableModels = async () => {
     return [
-        { name: "gemini-1.5-flash", description: "Fast and balanced" },
-        { name: "gemini-1.5-pro", description: "Complex reasoning" },
-        { name: "gemini-2.0-flash-exp", description: "Next generation speed" }
+        { name: "gemini-2.0-flash", description: "Next-gen high speed & high accuracy (Recommended)" },
+        { name: "gemini-2.0-pro-exp", description: "Highest intelligence for complex reasoning" }
     ];
 };
 
 export const setCurrentModel = (name: string) => { currentModelName = name; };
 export const getCurrentModel = () => currentModelName;
 
-// 기존 단발성 응답 함수들도 주입받은 키를 사용하도록 유지 (필요 시 확장)
 export const getAiDiagnosis = async (issue: string, userApiKey?: string) => {
     const model = getModel(currentModelName, userApiKey);
     const result = await model.generateContent(`Analyze this project issue and provide a resolution protocol: ${issue}`);

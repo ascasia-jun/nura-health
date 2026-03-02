@@ -26,9 +26,9 @@ const INITIAL_MESSAGE: Message = {
 };
 
 /**
- * ChatOps 기능을 관리하는 커스텀 훅 (v3.7 - Database Integration)
+ * ChatOps 기능을 관리하는 커스텀 훅 (v3.8 - Standardized Model)
  */
-export const useChatOps = (initialModel: string = 'gemini-1.5-flash') => {
+export const useChatOps = (initialModel: string = 'gemini-2.0-flash') => {
     const { user } = useUser(); // 사용자 정보 획득
     const [messages, setMessages] = useState<Message[]>([INITIAL_MESSAGE]);
     const [models, setModels] = useState<AIModel[]>([]);
