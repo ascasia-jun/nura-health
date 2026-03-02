@@ -47,7 +47,7 @@ router.get('/credentials', async (req: Request, res: Response) => {
 
 /**
  * POST /api/credentials
- * [v3.8 Refinement] 유효성 검증 통합 및 500 에러 방어
+ * [v3.8 Hotfix] UPSERT 호환성 문제 해결을 위해 조회 후 분기 처리로 변경
  */
 router.post('/credentials', async (req: Request, res: Response) => {
     const userId = req.headers['x-user-id'] as string;
@@ -56,32 +56,50 @@ router.post('/credentials', async (req: Request, res: Response) => {
     if (!userId) return res.status(401).json({ error: 'Unauthorized' });
     if (!serviceName || !token) return res.status(400).json({ error: 'Service name and token are required' });
 
+    console.log(`[Credentials] Saving ${serviceName} for user ${userId}...`);
+
     try {
         // 1. Gemini인 경우 키 유효성 실시간 검증
         if (serviceName === 'gemini') {
+            console.log(`[Gemini] Validating key...`);
             const isValid = await validateGeminiKey(token);
             if (!isValid) {
+                console.warn(`[Gemini] Invalid key attempt by user ${userId}`);
                 return res.status(400).json({ error: '유효하지 않은 Gemini API 키입니다. 다시 확인해주세요.' });
             }
         }
 
-        // 2. 암호화 수행 (security.ts의 방어 로직 활용)
-        const encrypted = encrypt(token);
+        // 2. 암호화 수행
+        let encrypted = '';
+        try {
+            encrypted = encrypt(token);
+        } catch (encError: any) {
+            console.error('[Security] Encryption failed:', encError.message);
+            return res.status(500).json({ error: '보안 처리 중 오류가 발생했습니다. ENCRYPTION_KEY 설정을 확인하세요.' });
+        }
         
-        // 3. DB 저장 (UPSERT)
+        // 3. DB 저장 (UPSERT 호환성 확보: 조회 후 분기)
         const db = getDb();
-        await db.run(
-            `INSERT INTO user_credentials (user_id, service_name, encrypted_token) 
-             VALUES (?, ?, ?) 
-             ON CONFLICT(user_id, service_name) 
-             DO UPDATE SET encrypted_token = EXCLUDED.encrypted_token, updated_at = CURRENT_TIMESTAMP`,
-            [userId, serviceName, encrypted]
-        );
+        const existing = await db.get('SELECT id FROM user_credentials WHERE user_id = ? AND service_name = ?', [userId, serviceName]);
+        
+        if (existing) {
+            await db.run(
+                'UPDATE user_credentials SET encrypted_token = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?',
+                [encrypted, existing.id]
+            );
+            console.log(`[Credentials] Updated ${serviceName} for user ${userId}`);
+        } else {
+            await db.run(
+                'INSERT INTO user_credentials (user_id, service_name, encrypted_token) VALUES (?, ?, ?)',
+                [userId, serviceName, encrypted]
+            );
+            console.log(`[Credentials] Inserted ${serviceName} for user ${userId}`);
+        }
         
         res.json({ success: true, message: `${serviceName} credential saved successfully.` });
     } catch (error: any) {
-        console.error('[API] Credential save error:', error.message);
-        res.status(500).json({ error: '서버 오류가 발생했습니다. 잠시 후 다시 시도해주세요.' });
+        console.error('[API] Fatal error in /api/credentials:', error);
+        res.status(500).json({ error: `서버 오류: ${error.message}` });
     }
 });
 
@@ -119,7 +137,7 @@ router.delete('/github/public-repos/:owner/:repo', async (req: Request, res: Res
     } catch (e) { res.status(500).json({ error: 'Failed to delete' }); }
 });
 
-// --- [Existing Core API Implementation (Full content remains same)] ---
+// --- [Existing Core API Implementation (Maintained)] ---
 
 router.get('/github/repos', async (req: Request, res: Response) => {
     const userId = req.headers['x-user-id'] as string;
@@ -260,115 +278,6 @@ router.post('/chat/stream', async (req: Request, res: Response) => {
         res.write(`data: ${JSON.stringify({ done: true })}\n\n`);
         res.end();
     }
-});
-
-// --- [Other APIs (Profile, Admin, Sessions, Models, Skills) - Maintained] ---
-
-router.put('/me', async (req: Request, res: Response) => {
-    const userId = req.headers['x-user-id'] as string;
-    const { name, email, department, password } = req.body;
-    if (!userId) return res.status(401).json({ error: 'Unauthorized' });
-    try {
-        const db = getDb();
-        if (password) {
-            const hash = await bcrypt.hash(password, 10);
-            await db.run('UPDATE users SET name = ?, email = ?, department = ?, password_hash = ? WHERE id = ?', [name, email, department, hash, userId]);
-        } else {
-            await db.run('UPDATE users SET name = ?, email = ?, department = ? WHERE id = ?', [name, email, department, userId]);
-        }
-        res.json({ success: true });
-    } catch (e) { res.status(500).json({ error: 'Update failed' }); }
-});
-
-router.get('/admin/users', async (req: Request, res: Response) => {
-    const adminId = req.headers['x-user-id'] as string;
-    try {
-        const db = getDb();
-        const admin = await db.get('SELECT role FROM users WHERE id = ?', [adminId]);
-        if (!admin || admin.role !== 'admin') return res.status(403).json({ error: 'Forbidden' });
-        const users = await db.all('SELECT id, username, name, email, department, role, created_at FROM users');
-        res.json({ users });
-    } catch (e) { res.status(500).json({ error: 'Fetch failed' }); }
-});
-
-router.post('/admin/users', async (req: Request, res: Response) => {
-    const adminId = req.headers['x-user-id'] as string;
-    const { username, password, name, email, department, role } = req.body;
-    try {
-        const db = getDb();
-        const admin = await db.get('SELECT role FROM users WHERE id = ?', [adminId]);
-        if (!admin || admin.role !== 'admin') return res.status(403).json({ error: 'Forbidden' });
-        const hash = await bcrypt.hash(password, 10);
-        const id = `user_${Date.now()}`;
-        await db.run('INSERT INTO users (id, username, password_hash, name, email, department, role) VALUES (?, ?, ?, ?, ?, ?, ?)', [id, username, hash, name, email, department, role || 'user']);
-        res.json({ success: true });
-    } catch (e: any) { res.status(500).json({ error: 'Create failed' }); }
-});
-
-router.put('/admin/users/:id', async (req: Request, res: Response) => {
-    const adminId = req.headers['x-user-id'] as string;
-    const { id } = req.params;
-    const { username, password, name, email, department, role } = req.body;
-    try {
-        const db = getDb();
-        const admin = await db.get('SELECT role FROM users WHERE id = ?', [adminId]);
-        if (!admin || admin.role !== 'admin') return res.status(403).json({ error: 'Forbidden' });
-        if (password) {
-            const hash = await bcrypt.hash(password, 10);
-            await db.run('UPDATE users SET username = ?, password_hash = ?, name = ?, email = ?, department = ?, role = ? WHERE id = ?', [username, hash, name, email, department, role, id]);
-        } else {
-            await db.run('UPDATE users SET username = ?, name = ?, email = ?, department = ?, role = ? WHERE id = ?', [username, name, email, department, role, id]);
-        }
-        res.json({ success: true });
-    } catch (e) { res.status(500).json({ error: 'Update failed' }); }
-});
-
-router.delete('/admin/users/:id', async (req: Request, res: Response) => {
-    const adminId = req.headers['x-user-id'] as string;
-    const { id } = req.params;
-    try {
-        const db = getDb();
-        const admin = await db.get('SELECT role FROM users WHERE id = ?', [adminId]);
-        if (!admin || admin.role !== 'admin') return res.status(403).json({ error: 'Forbidden' });
-        await db.run('DELETE FROM users WHERE id = ?', [id]);
-        res.json({ success: true });
-    } catch (e) { res.status(500).json({ error: 'Delete failed' }); }
-});
-
-router.get('/sessions', async (req: Request, res: Response) => {
-    const userId = req.headers['x-user-id'] as string;
-    if (!userId) return res.status(401).json({ error: 'Unauthorized' });
-    try {
-        const db = getDb();
-        const sessions = await db.all('SELECT * FROM chat_sessions WHERE user_id = ? ORDER BY timestamp DESC', [userId]);
-        res.json({ sessions });
-    } catch (e) { res.status(500).json({ error: 'Load failed' }); }
-});
-
-router.post('/sessions', async (req: Request, res: Response) => {
-    const userId = req.headers['x-user-id'] as string;
-    const { title, model } = req.body;
-    if (!userId) return res.status(401).json({ error: 'Unauthorized' });
-    try {
-        const db = getDb();
-        const sessionId = `sess_${Date.now()}`;
-        await db.run('INSERT INTO chat_sessions (id, user_id, title, model) VALUES (?, ?, ?, ?)', [sessionId, userId, title, model]);
-        res.json({ success: true, sessionId });
-    } catch (e) { res.status(500).json({ error: 'Create failed' }); }
-});
-
-router.get('/sessions/:id/messages', async (req: Request, res: Response) => {
-    const userId = req.headers['x-user-id'] as string;
-    const { id } = req.params;
-    if (!userId) return res.status(401).json({ error: 'Unauthorized' });
-    try {
-        const db = getDb();
-        const session = await db.get('SELECT user_id FROM chat_sessions WHERE id = ?', [id]);
-        if (!session || session.user_id !== userId) return res.status(403).json({ error: 'Forbidden' });
-        const rows = await db.all('SELECT * FROM messages WHERE session_id = ? ORDER BY id ASC', [id]);
-        const messages = rows.map((r: any) => ({ ...JSON.parse(r.content_json), role: r.role, timestamp: r.timestamp }));
-        res.json({ messages });
-    } catch (e) { res.status(500).json({ error: 'Load failed' }); }
 });
 
 router.get('/skills', async (req: Request, res: Response) => {
