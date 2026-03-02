@@ -25,7 +25,7 @@ const INITIAL_MESSAGE: Message = {
 };
 
 /**
- * ChatOps 기능을 관리하는 커스텀 훅 (v3.8 - History Logic Hardened)
+ * ChatOps 기능을 관리하는 커스텀 훅 (v3.8 - Preference Sync Hardened)
  */
 export const useChatOps = (initialModel: string = 'gemini-2.0-flash') => {
     const { user } = useUser();
@@ -50,6 +50,9 @@ export const useChatOps = (initialModel: string = 'gemini-2.0-flash') => {
         'x-user-id': user?.id || ''
     }), [user]);
 
+    /**
+     * 가용 AI 모델 목록을 서버에서 새로 불러옵니다.
+     */
     const refreshModels = useCallback(async () => {
         if (!user) return;
         try {
@@ -57,21 +60,36 @@ export const useChatOps = (initialModel: string = 'gemini-2.0-flash') => {
             const data = await res.json();
             if (data.models) {
                 setModels(data.models);
-                if (data.currentModel && !data.models.some((m: any) => m.name === currentModel)) {
+                // [v3.8] 사용자의 선호 모델이 있으면 최우선으로 설정
+                if (user.preferred_model) {
+                    setCurrentModel(user.preferred_model);
+                } else if (data.currentModel && !data.models.some((m: any) => m.name === currentModel)) {
                     setCurrentModel(data.currentModel);
                 }
             }
         } catch (e) { console.error('모델 목록 갱신 실패'); }
     }, [user, getHeaders, currentModel]);
 
+    // 사용자의 선호 모델 변화 감지 및 즉시 적용
+    useEffect(() => {
+        if (user?.preferred_model) {
+            setCurrentModel(user.preferred_model);
+        }
+    }, [user?.preferred_model]);
+
     useEffect(() => {
         const init = async () => {
             if (!user) return;
             try {
+                // 1. 초기 모델 로드 (선호 모델 자동 적용 포함)
                 await refreshModels();
+                
+                // 2. 스킬 로드
                 const sRes = await fetch(`${API_URL}/api/skills`);
                 const sData = await sRes.json();
                 if (sData.skills) setSkills(sData.skills);
+
+                // 3. 세션 목록 로드
                 const sessRes = await fetch(`${API_URL}/api/sessions`, { headers: getHeaders() as any });
                 const sessData = await sessRes.json();
                 if (sessData.sessions) setSessions(sessData.sessions);
@@ -188,20 +206,14 @@ export const useChatOps = (initialModel: string = 'gemini-2.0-flash') => {
         isSendingRef.current = true;
         let activeId: string = sessionId || '';
         try {
-            // [중요] History 구성: 현재 보내는 메시지는 'history' 배열에서 제외해야 함
-            // Gemini API는 (past_history) + (current_message) 형태로 호출됨
             const history = messages
                 .filter(m => (m.parts || []).some(p => p.type === 'text' && p.content.trim() !== ''))
-                .slice(-10) // 토큰 최적화를 위해 최근 10개만 유지
+                .slice(-10)
                 .map(m => ({
                     role: m.role === 'user' ? 'user' : 'model',
                     parts: (m.parts || []).filter(p => p.type === 'text' && p.content.trim() !== '').map(p => ({ text: p.content }))
                 }));
-
-            // 첫 메시지가 model(assistant)인 경우 제거 (user로 시작해야 함)
-            while (history.length > 0 && history[0].role === 'model') {
-                history.shift();
-            }
+            while (history.length > 0 && history[0].role === 'model') { history.shift(); }
 
             if (!activeId) {
                 const res = await fetch(`${API_URL}/api/sessions`, { method: 'POST', headers: getHeaders() as any, body: JSON.stringify({ title: input.substring(0, 30), model: currentModel }) });
@@ -215,7 +227,6 @@ export const useChatOps = (initialModel: string = 'gemini-2.0-flash') => {
 
             const userMsg: Message = { id: Date.now().toString(), role: 'user', parts: [{ type: 'text', content: input }], timestamp: new Date(), meta: { activeSkillId, selectedHooks: [...selectedHooks], attachedResources: [...attachedResources] } };
             const aiMsg: Message = { id: (Date.now() + 1).toString(), role: 'assistant', parts: [], timestamp: new Date(), model: currentModel };
-
             setMessages(prev => [...prev, userMsg, aiMsg]);
 
             let hookContext = '';
@@ -228,12 +239,17 @@ export const useChatOps = (initialModel: string = 'gemini-2.0-flash') => {
                 hookContext = contents.join('\n\n');
             }
 
+            // [v3.8] 개별 Gemini API Key 조회
+            const credRes = await fetch(`${API_URL}/api/credentials`, { headers: getHeaders() as any });
+            const credData = await credRes.json();
+            const userGeminiKey = credData.creds?.find((c: any) => c.service_name === 'gemini') ? 'EXISTS' : null;
+
             const res = await fetch(API_ENDPOINTS.CHAT_STREAM, { 
                 method: 'POST', 
                 headers: getHeaders() as any, 
                 body: JSON.stringify({ 
                     message: hookContext ? `${hookContext}\n\n---\n\n${input}` : input, 
-                    history, // 정제된 과거 내역만 전송
+                    history, 
                     model: currentModel, 
                     selectedRepo, 
                     activeSkillId, 
@@ -243,7 +259,6 @@ export const useChatOps = (initialModel: string = 'gemini-2.0-flash') => {
             });
 
             setSelectedHooks([]); setAttachedResources([]);
-
             const reader = res.body?.getReader();
             const decoder = new TextDecoder();
             let lineBuffer = '';
