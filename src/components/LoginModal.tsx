@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { X, Lock, User } from 'lucide-react';
+import { X, Lock, User, Loader2 } from 'lucide-react';
 import { useUser } from '../context/UserContext';
 
 interface LoginModalProps {
@@ -11,21 +11,36 @@ export const LoginModal: React.FC<LoginModalProps> = ({ isOpen, onClose }) => {
     const [id, setId] = useState('');
     const [pw, setPw] = useState('');
     const [error, setError] = useState('');
+    const [isLoading, setIsLoading] = useState(false);
     const { login } = useUser();
 
     if (!isOpen) return null;
 
-    const handleSubmit = (e: React.FormEvent) => {
+    const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
-        if (login(id, pw)) {
-            // 로그인 성공 시 챗옵스로 즉시 이동
-            window.location.hash = '#chatops';
-            onClose();
-            setId('');
-            setPw('');
-            setError('');
-        } else {
-            setError('아이디 또는 비밀번호가 일치하지 않습니다.');
+        if (!id || !pw) {
+            setError('아이디와 비밀번호를 모두 입력해주세요.');
+            return;
+        }
+
+        setIsLoading(true);
+        setError('');
+
+        try {
+            const result = await login(id, pw);
+            if (result.success) {
+                window.location.hash = '#chatops';
+                onClose();
+                setId('');
+                setPw('');
+            } else {
+                // 서버에서 전달받은 구체적인 에러 메시지 표시 (비밀번호 불일치 등)
+                setError(result.error || '로그인에 실패했습니다.');
+            }
+        } catch (err) {
+            setError('시스템 오류가 발생했습니다.');
+        } finally {
+            setIsLoading(false);
         }
     };
 
@@ -53,8 +68,9 @@ export const LoginModal: React.FC<LoginModalProps> = ({ isOpen, onClose }) => {
                                 type="text" 
                                 value={id}
                                 onChange={(e) => setId(e.target.value)}
-                                className="w-full bg-slate-800/50 border border-slate-700 rounded-lg py-3 pl-10 pr-4 text-white focus:outline-none focus:border-cyan-500 transition-colors"
+                                className="w-full bg-slate-800/50 border border-slate-700 rounded-lg py-3 pl-10 pr-4 text-white focus:outline-none focus:border-cyan-500 transition-colors disabled:opacity-50"
                                 placeholder="Enter ID (hint: admin)"
+                                disabled={isLoading}
                             />
                         </div>
                     </div>
@@ -67,21 +83,32 @@ export const LoginModal: React.FC<LoginModalProps> = ({ isOpen, onClose }) => {
                                 type="password" 
                                 value={pw}
                                 onChange={(e) => setPw(e.target.value)}
-                                className="w-full bg-slate-800/50 border border-slate-700 rounded-lg py-3 pl-10 pr-4 text-white focus:outline-none focus:border-cyan-500 transition-colors"
+                                className="w-full bg-slate-800/50 border border-slate-700 rounded-lg py-3 pl-10 pr-4 text-white focus:outline-none focus:border-cyan-500 transition-colors disabled:opacity-50"
                                 placeholder="Enter Password"
+                                disabled={isLoading}
                             />
                         </div>
                     </div>
 
                     {error && (
-                        <p className="text-red-400 text-xs text-center">{error}</p>
+                        <div className="p-3 rounded-lg bg-red-500/10 border border-red-500/20 text-red-400 text-xs text-center animate-shake">
+                            {error}
+                        </div>
                     )}
 
                     <button 
                         type="submit"
-                        className="w-full bg-cyan-500 text-slate-900 font-bold py-3 rounded-lg hover:bg-cyan-400 transition-colors shadow-[0_0_15px_rgba(6,182,212,0.3)]"
+                        disabled={isLoading}
+                        className="w-full bg-cyan-500 text-slate-900 font-bold py-3 rounded-lg hover:bg-cyan-400 transition-colors shadow-[0_0_15px_rgba(6,182,212,0.3)] flex items-center justify-center gap-2"
                     >
-                        Initialize Analysis Session
+                        {isLoading ? (
+                            <>
+                                <Loader2 size={18} className="animate-spin" />
+                                <span>Authenticating...</span>
+                            </>
+                        ) : (
+                            <span>Initialize Analysis Session</span>
+                        )}
                     </button>
                 </form>
             </div>

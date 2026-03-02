@@ -15,7 +15,7 @@ interface UserContextType {
     user: User | null;
     isLoggedIn: boolean;
     tier: 'Baseline' | 'Performance' | 'Apex';
-    login: (username: string, pw: string) => Promise<boolean>;
+    login: (username: string, pw: string) => Promise<{ success: boolean; error?: string }>;
     logout: () => void;
     updateTier: (newTier: 'Baseline' | 'Performance' | 'Apex') => void;
 }
@@ -26,7 +26,6 @@ export const UserProvider: React.FC<{ children: React.ReactNode }> = ({ children
     const [user, setUser] = useState<User | null>(null);
     const [tier, setTier] = useState<'Baseline' | 'Performance' | 'Apex'>('Baseline');
 
-    // 세션 유지 (Local Storage)
     useEffect(() => {
         const savedUser = localStorage.getItem('repoinsight_user');
         if (savedUser) {
@@ -36,7 +35,7 @@ export const UserProvider: React.FC<{ children: React.ReactNode }> = ({ children
         }
     }, []);
 
-    const login = async (username: string, pw: string): Promise<boolean> => {
+    const login = async (username: string, pw: string): Promise<{ success: boolean; error?: string }> => {
         try {
             const res = await fetch(`${API_URL}/api/auth/login`, {
                 method: 'POST',
@@ -44,22 +43,24 @@ export const UserProvider: React.FC<{ children: React.ReactNode }> = ({ children
                 body: JSON.stringify({ username, password: pw })
             });
 
+            const data = await res.json();
+
             if (res.ok) {
-                const data = await res.json();
                 const userData: User = { 
                     ...data.user, 
-                    tier: 'Apex' // 기본적으로 모든 기능을 사용할 수 있도록 고정 (또는 DB에서 가져옴)
+                    tier: 'Apex' 
                 };
                 setUser(userData);
                 setTier('Apex');
                 localStorage.setItem('repoinsight_user', JSON.stringify(userData));
                 localStorage.setItem('repoinsight_tier', 'Apex');
-                return true;
+                return { success: true };
             }
-            return false;
+            // 서버에서 보낸 에러 메시지 활용
+            return { success: false, error: data.error || '로그인에 실패했습니다.' };
         } catch (e) {
             console.error('Login error:', e);
-            return false;
+            return { success: false, error: '서버 연결에 실패했습니다.' };
         }
     };
 

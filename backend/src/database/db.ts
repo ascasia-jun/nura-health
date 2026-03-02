@@ -79,17 +79,21 @@ export async function initDatabase() {
 export async function seedInitialData() {
     if (!db) await initDatabase();
     
-    // admin 계정 존재 여부 확인 (비밀번호: admin123)
-    // 실제 운영 시에는 별도의 가입 프로세스 사용
+    const bcrypt = require('bcryptjs');
     const admin = await db!.get('SELECT * FROM users WHERE username = ?', ['admin']);
+    
+    const newHash = await bcrypt.hash('admin', 10); // 비밀번호를 'admin'으로 설정
+
     if (!admin) {
-        const bcrypt = require('bcryptjs');
-        const hash = await bcrypt.hash('admin123', 10);
         await db!.run(
             'INSERT INTO users (id, username, password_hash, name) VALUES (?, ?, ?, ?)',
-            ['user_admin', 'admin', hash, 'Administrator']
+            ['user_admin', 'admin', newHash, 'Administrator']
         );
-        console.log('[Database] Seeded initial admin account.');
+        console.log('[Database] Seeded initial admin account (admin/admin).');
+    } else {
+        // 이미 존재할 경우 비밀번호 최신화
+        await db!.run('UPDATE users SET password_hash = ? WHERE username = ?', [newHash, 'admin']);
+        console.log('[Database] Admin password updated to "admin".');
     }
 }
 
