@@ -438,10 +438,10 @@ export const ChatOpsPage: React.FC = () => {
                                                         }
                                                     }
                                                     return (
-                                                        <button key={file.path} onClick={(e) => isFolder ? toggleFolder(e, file.path) : handleResourceToggle('file', file)} className={`w-full group flex items-center justify-between gap-2 py-0.5 px-2 rounded-lg transition-all hover:bg-white/10 ${isAttached ? 'bg-indigo-500/10 border border-indigo-500/30' : ''}`} style={{ marginLeft: `${depth * 8}px`, width: `calc(100% - ${depth * 8}px)` }}>
+                                                        <div key={file.path} onClick={(e) => isFolder ? toggleFolder(e, file.path) : handleResourceToggle('file', file)} className={`w-full group flex items-center justify-between gap-2 py-0.5 px-2 rounded-lg transition-all hover:bg-white/10 cursor-pointer ${isAttached ? 'bg-indigo-500/10 border border-indigo-500/30' : ''}`} style={{ marginLeft: `${depth * 8}px`, width: `calc(100% - ${depth * 8}px)` }}>
                                                             <div className={`flex-1 flex items-center gap-2 truncate text-left ${isAttached ? 'text-indigo-400 font-black' : 'text-slate-400 group-hover:text-slate-200'}`}>{isFolder ? (isExpanded ? <ChevronDown size={10} /> : <ChevronRight size={10} />) : <div className="w-[10px]" />}{isFolder ? (isExpanded ? <FolderOpen size={10} className="text-cyan-400 shrink-0" /> : <Folder size={10} className="text-cyan-500 shrink-0" />) : <FileCode size={10} className="text-slate-500 shrink-0" />}<span className="text-[10px] truncate font-mono">{name}</span></div>
                                                             <div className="flex items-center gap-1">{isFolder && <button onClick={(e) => { e.stopPropagation(); handleResourceToggle('folder', file); }} className={`p-0.5 rounded ${isAttached ? 'bg-red-500/20 text-red-400' : 'bg-cyan-500/20 text-cyan-500 opacity-0 group-hover:opacity-100'}`}>{isAttached ? <X size={8} /> : <Plus size={8} />}</button>}{!isFolder && file.type === 'blob' && <div className={`w-1.5 h-1.5 rounded-full ${isAttached ? 'bg-indigo-500' : 'bg-transparent'}`} />}</div>
-                                                        </button>
+                                                        </div>
                                                     );
                                                 })}
                                             </div>
