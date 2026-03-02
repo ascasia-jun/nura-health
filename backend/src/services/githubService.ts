@@ -1,19 +1,27 @@
 import axios from 'axios';
 
 /**
- * GitHub API와 통신하여 데이터를 가져오는 서비스 (v3.5 확장 버전)
+ * [v3.8 Iteration] GitHub API 통신 서비스 - 토큰 유무에 따른 헤더 자동 최적화
  */
 export const githubService = {
+    /**
+     * 공통 헤더 생성 (토큰이 있을 때만 Bearer 추가)
+     */
+    getHeaders: (token?: string) => {
+        const headers: any = { 'Accept': 'application/vnd.github.v3+json' };
+        if (token && token.trim() !== "") {
+            headers['Authorization'] = `Bearer ${token}`;
+        }
+        return headers;
+    },
+
     /**
      * 사용자의 리포지토리 목록을 가져옵니다.
      */
     fetchUserRepos: async (token: string) => {
         try {
             const response = await axios.get('https://api.github.com/user/repos', {
-                headers: {
-                    Authorization: `Bearer ${token}`,
-                    Accept: 'application/vnd.github.v3+json',
-                },
+                headers: githubService.getHeaders(token),
                 params: { per_page: 100, sort: 'updated' },
             });
             return response.data;
@@ -29,10 +37,7 @@ export const githubService = {
     fetchPullRequests: async (token: string, owner: string, repo: string) => {
         try {
             const response = await axios.get(`https://api.github.com/repos/${owner}/${repo}/pulls`, {
-                headers: {
-                    Authorization: `Bearer ${token}`,
-                    Accept: 'application/vnd.github.v3+json',
-                },
+                headers: githubService.getHeaders(token),
                 params: { state: 'all', per_page: 20 },
             });
             return response.data;
@@ -42,15 +47,12 @@ export const githubService = {
     },
 
     /**
-     * 최근 커밋(Push) 목록을 가져옵니다.
+     * 최근 커밋 목록을 가져옵니다.
      */
     fetchCommits: async (token: string, owner: string, repo: string) => {
         try {
             const response = await axios.get(`https://api.github.com/repos/${owner}/${repo}/commits`, {
-                headers: {
-                    Authorization: `Bearer ${token}`,
-                    Accept: 'application/vnd.github.v3+json',
-                },
+                headers: githubService.getHeaders(token),
                 params: { per_page: 20 },
             });
             return response.data;
@@ -66,8 +68,8 @@ export const githubService = {
         try {
             const response = await axios.get(`https://api.github.com/repos/${owner}/${repo}/commits/${sha}`, {
                 headers: {
-                    Authorization: `Bearer ${token}`,
-                    Accept: 'application/vnd.github.v3.diff',
+                    ...githubService.getHeaders(token),
+                    'Accept': 'application/vnd.github.v3.diff',
                 },
             });
             return response.data;
@@ -82,15 +84,12 @@ export const githubService = {
     fetchFileTree: async (token: string, owner: string, repo: string, branch: string = 'main'): Promise<any[]> => {
         try {
             const branchRes = await axios.get(`https://api.github.com/repos/${owner}/${repo}/branches/${branch}`, {
-                headers: { Authorization: `Bearer ${token}`, Accept: 'application/vnd.github.v3+json' },
+                headers: githubService.getHeaders(token),
             });
             const treeSha = branchRes.data.commit.commit.tree.sha;
 
             const response = await axios.get(`https://api.github.com/repos/${owner}/${repo}/git/trees/${treeSha}?recursive=1`, {
-                headers: {
-                    Authorization: `Bearer ${token}`,
-                    Accept: 'application/vnd.github.v3+json',
-                },
+                headers: githubService.getHeaders(token),
             });
             return response.data.tree;
         } catch (error: any) {
@@ -106,8 +105,8 @@ export const githubService = {
         try {
             const response = await axios.get(`https://api.github.com/repos/${owner}/${repo}/pulls/${pullNumber}`, {
                 headers: {
-                    Authorization: `Bearer ${token}`,
-                    Accept: 'application/vnd.github.v3.diff',
+                    ...githubService.getHeaders(token),
+                    'Accept': 'application/vnd.github.v3.diff',
                 },
             });
             return response.data;
@@ -122,10 +121,7 @@ export const githubService = {
     fetchRepoContent: async (token: string, owner: string, repo: string, path: string = '') => {
         try {
             const response = await axios.get(`https://api.github.com/repos/${owner}/${repo}/contents/${path}`, {
-                headers: {
-                    Authorization: `Bearer ${token}`,
-                    Accept: 'application/vnd.github.v3+json',
-                },
+                headers: githubService.getHeaders(token),
             });
             return response.data;
         } catch (error: any) {
@@ -134,26 +130,17 @@ export const githubService = {
     },
 
     /**
-     * [신규] GitHub Code Search API를 사용하여 내용을 검색합니다 (grep_search).
+     * GitHub Code Search API를 사용하여 내용을 검색합니다.
      */
     searchCode: async (token: string, owner: string, repo: string, query: string) => {
         try {
-            // "query repo:owner/repo" 형식으로 검색어 구성
             const fullQuery = `${query} repo:${owner}/${repo}`;
             const response = await axios.get('https://api.github.com/search/code', {
-                headers: {
-                    Authorization: `Bearer ${token}`,
-                    Accept: 'application/vnd.github.v3+json',
-                },
+                headers: githubService.getHeaders(token),
                 params: { q: fullQuery, per_page: 20 },
             });
-            
-            return response.data.items.map((item: any) => ({
-                path: item.path,
-                url: item.html_url
-            }));
+            return response.data.items.map((item: any) => ({ path: item.path, url: item.html_url }));
         } catch (error: any) {
-            console.error('GitHub Search Error:', error.response?.data || error.message);
             throw new Error(`Code search failed: ${error.response?.data?.message || error.message}`);
         }
     }

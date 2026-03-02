@@ -20,7 +20,7 @@ export async function initDatabase() {
         driver: sqlite3.Database
     });
 
-    // 1. users 테이블 (v3.8 확장 필드 포함)
+    // 1. users 테이블
     await db.exec(`
         CREATE TABLE IF NOT EXISTS users (
             id TEXT PRIMARY KEY,
@@ -34,12 +34,11 @@ export async function initDatabase() {
         )
     `);
 
-    // 기존 테이블에 필드가 없는 경우 추가 (Migration)
     try { await db.exec('ALTER TABLE users ADD COLUMN email TEXT'); } catch (e) {}
     try { await db.exec('ALTER TABLE users ADD COLUMN department TEXT'); } catch (e) {}
     try { await db.exec('ALTER TABLE users ADD COLUMN role TEXT DEFAULT "user"'); } catch (e) {}
 
-    // 2. user_credentials 테이블
+    // 2. user_credentials 테이블 (멀티 서비스 지원)
     await db.exec(`
         CREATE TABLE IF NOT EXISTS user_credentials (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -47,11 +46,24 @@ export async function initDatabase() {
             service_name TEXT NOT NULL,
             encrypted_token TEXT NOT NULL,
             updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+            UNIQUE(user_id, service_name),
             FOREIGN KEY (user_id) REFERENCES users(id)
         )
     `);
 
-    // 3. chat_sessions 테이블
+    // 3. user_public_repos 테이블 (공개 저장소 URL 관리) - v3.8 신규
+    await db.exec(`
+        CREATE TABLE IF NOT EXISTS user_public_repos (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id TEXT NOT NULL,
+            repo_full_name TEXT NOT NULL,
+            added_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+            UNIQUE(user_id, repo_full_name),
+            FOREIGN KEY (user_id) REFERENCES users(id)
+        )
+    `);
+
+    // 4. chat_sessions 테이블
     await db.exec(`
         CREATE TABLE IF NOT EXISTS chat_sessions (
             id TEXT PRIMARY KEY,
@@ -63,7 +75,7 @@ export async function initDatabase() {
         )
     `);
 
-    // 4. messages 테이블
+    // 5. messages 테이블
     await db.exec(`
         CREATE TABLE IF NOT EXISTS messages (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -75,31 +87,19 @@ export async function initDatabase() {
         )
     `);
 
-    console.log('[Database] SQLite initialized and schema migrated.');
+    console.log('[Database] SQLite initialized and schema migrated (v3.8 Multi-Service).');
     return db;
 }
 
-/**
- * 초기 테스트용 관리자 계정 생성 (개발 편의용)
- */
 export async function seedInitialData() {
     if (!db) await initDatabase();
-    
     const bcrypt = require('bcryptjs');
     const admin = await db!.get('SELECT * FROM users WHERE username = ?', ['admin']);
-    
     const newHash = await bcrypt.hash('admin', 10);
-
     if (!admin) {
-        await db!.run(
-            'INSERT INTO users (id, username, password_hash, name, role, department) VALUES (?, ?, ?, ?, ?, ?)',
-            ['user_admin', 'admin', newHash, 'Administrator', 'admin', 'Management']
-        );
-        console.log('[Database] Seeded initial admin account (admin/admin).');
+        await db!.run('INSERT INTO users (id, username, password_hash, name, role, department) VALUES (?, ?, ?, ?, ?, ?)', ['user_admin', 'admin', newHash, 'Administrator', 'admin', 'Management']);
     } else {
-        // 이미 존재할 경우 비밀번호 및 권한 최신화
         await db!.run('UPDATE users SET password_hash = ?, role = ? WHERE username = ?', [newHash, 'admin', 'admin']);
-        console.log('[Database] Admin account synchronized.');
     }
 }
 
