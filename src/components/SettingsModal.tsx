@@ -208,7 +208,12 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose, c
                                         </div>
                                         <div><div className="text-xl font-black text-white italic">Google Gemini</div><div className="text-[10px] text-slate-500 uppercase font-black tracking-widest mt-1">AI Reasoning Engine</div></div>
                                         <div className="space-y-3">
-                                            <input type="password" value={geminiKey} onChange={(e) => setGeminiKey(e.target.value)} placeholder="Enter API Key" className="w-full bg-black/40 border border-white/10 rounded-xl px-4 py-3 text-white text-xs font-mono outline-none focus:border-cyan-500 transition-all" />
+                                            <div className="space-y-1.5">
+                                                <input type="password" value={geminiKey} onChange={(e) => setGeminiKey(e.target.value)} placeholder="Enter API Key" className="w-full bg-black/40 border border-white/10 rounded-xl px-4 py-3 text-white text-xs font-mono outline-none focus:border-cyan-500 transition-all" />
+                                                <a href="https://aistudio.google.com/app/apikey" target="_blank" rel="noreferrer" className="flex items-center gap-1.5 px-1 text-[9px] font-bold text-cyan-500 hover:text-white transition-colors uppercase tracking-tight">
+                                                    <ExternalLink size={10} /> Get your API Key from Google AI Studio
+                                                </a>
+                                            </div>
                                             <button onClick={() => handleSaveCred('gemini', geminiKey)} disabled={isLoading || !geminiKey} className="w-full bg-white text-slate-950 font-black py-3 rounded-xl text-xs uppercase hover:bg-cyan-400 transition-all disabled:opacity-30">Link Gemini Key</button>
                                         </div>
                                     </div>
