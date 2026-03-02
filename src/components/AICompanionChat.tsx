@@ -1,14 +1,14 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { MessageSquare, Send, Minimize2, Bot, User, Lock, RotateCcw, Loader2 } from 'lucide-react';
+import { MessageSquare, Send, Minimize2, Bot, User, Lock, RotateCcw, Loader2, X } from 'lucide-react';
 import { useUser } from '../context/UserContext';
 import { API_ENDPOINTS } from '../config';
 import { CHAT_MODULE_LOADED } from '../types/chat';
 import type { ChatPart, Message } from '../types/chat';
 import { MarkdownRenderer } from './Chat/MarkdownRenderer';
+import { ProcessNode } from './Chat/ProcessNode';
 
 // 모듈 로드 보장
 if (!CHAT_MODULE_LOADED) console.warn('Chat types module not loaded properly');
-import { ProcessNode } from './Chat/ProcessNode';
 
 /**
  * 랜딩 페이지에서 제공되는 소형 AI 어시스턴트 위젯입니다.
@@ -20,7 +20,7 @@ export const AICompanionChat: React.FC = () => {
         { 
             id: 'initial',
             role: 'assistant', 
-            parts: [{ type: 'text', content: '안녕하세요! Nura AI 시스템 아키텍트입니다. 프로젝트의 기술적 난제를 해결하고 최적화 프로토콜을 제안해드릴 준비가 되었습니다.' }],
+            parts: [{ type: 'text', content: '안녕하세요! RepoInsight AI 시스템 아키텍트입니다. Git 리포지토리의 수명 주기 전반에 걸친 지능형 분석과 최적화 솔루션을 제공해 드립니다.' }],
             timestamp: new Date()
         }
     ]);
@@ -78,7 +78,7 @@ export const AICompanionChat: React.FC = () => {
 
             // 히스토리 구성 (최근 10턴, parts 널 체크 강화)
             let history = messages
-                .filter(m => (m.parts || []).length > 0)
+                .filter(m => (m.parts || []).some(p => p.type === 'text' && p.content.trim() !== ''))
                 .slice(-10)
                 .map(msg => ({
                     role: msg.role === 'user' ? 'user' : 'model',
@@ -134,8 +134,11 @@ export const AICompanionChat: React.FC = () => {
                                             last.parts.push({ type: 'text', content });
                                         }
                                     } else {
+                                        // [지능형 갱신] 역순 탐색하여 완료되지 않은 가장 최근의 thought 파트 찾기
                                         const targetPart = [...last.parts].reverse().find(p => 
-                                            p.type === 'thought' && !p.content.startsWith('Completed:') && !p.content.startsWith('Failed:')
+                                            p.type === 'thought' && 
+                                            !p.content?.startsWith('Completed:') && 
+                                            !p.content?.startsWith('Failed:')
                                         );
                                         if (targetPart && (content.startsWith('Completed:') || content.startsWith('Failed:') || content.includes('Analyzing'))) {
                                             targetPart.content = content;
@@ -170,10 +173,10 @@ export const AICompanionChat: React.FC = () => {
         return (
             <button
                 onClick={() => setIsOpen(true)}
-                className="fixed bottom-8 right-8 z-50 bg-cyan-500 text-slate-900 p-4 rounded-full shadow-[0_0_20px_rgba(6,182,212,0.5)] hover:scale-110 transition-transform duration-300 flex items-center gap-2 font-bold border border-white/10"
+                className="fixed bottom-8 right-8 z-50 bg-cyan-500 text-slate-950 p-4 rounded-full shadow-[0_0_20px_rgba(6,182,212,0.5)] hover:scale-110 transition-transform duration-300 flex items-center gap-2 font-bold border border-white/10"
             >
                 {isLocked ? <Lock size={24} /> : <MessageSquare size={24} />}
-                <span className="hidden md:inline">Nura AI</span>
+                <span className="hidden md:inline">RepoInsight AI</span>
             </button>
         );
     }
@@ -184,7 +187,7 @@ export const AICompanionChat: React.FC = () => {
             <div className="bg-white/5 p-4 flex items-center justify-between border-b border-white/5">
                 <div className="flex items-center gap-2 text-slate-100 font-sans font-semibold">
                     <Bot size={20} className="text-cyan-400" />
-                    <span>Nura Assistant</span>
+                    <span>RepoInsight Assistant</span>
                     <span className="text-[10px] bg-cyan-500/20 text-cyan-400 px-1.5 py-0.5 rounded border border-cyan-500/30 font-mono uppercase tracking-tighter">Intelligent</span>
                 </div>
                 <div className="flex items-center gap-3">
@@ -201,7 +204,6 @@ export const AICompanionChat: React.FC = () => {
             <div className="flex-1 overflow-y-auto p-4 space-y-6 custom-scrollbar bg-black/20">
                 {messages.map((msg, idx) => (
                     <div key={idx} className={`flex gap-3 ${msg.role === 'user' ? 'flex-row-reverse' : ''}`}>
-                        {/* [수정] 메시지 내용이 있을 때만 아이콘 표시 */}
                         {msg.role === 'assistant' && (msg.parts?.length || 0) > 0 && (
                             <div className="w-8 h-8 rounded-full flex items-center justify-center shrink-0 border mt-1 bg-cyan-500/10 text-cyan-400 border-cyan-500/20">
                                 <Bot size={16} />
@@ -224,7 +226,6 @@ export const AICompanionChat: React.FC = () => {
                     </div>
                 ))}
                 
-                {/* AI 응답 대기 로더 (메시지가 비어있을 때만 표시) */}
                 {isLoading && (messages[messages.length - 1]?.parts || []).length === 0 && (
                     <div className="flex gap-3">
                         <div className="w-8 h-8 rounded-full bg-cyan-500/10 text-cyan-400 flex items-center justify-center shrink-0 border border-cyan-500/20">
@@ -240,7 +241,7 @@ export const AICompanionChat: React.FC = () => {
                 <div ref={messagesEndRef} />
             </div>
 
-            {/* 입력 영역 생략 (기존 유지) */}
+            {/* 입력 영역 */}
             <div className="p-4 bg-white/5 border-t border-white/5">
                 {isLocked ? (
                     <div className="text-center py-2">

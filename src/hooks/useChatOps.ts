@@ -17,11 +17,22 @@ export interface AttachedResource {
     repo: string;
 }
 
+// 초기 안내 메시지
+const INITIAL_MESSAGE: Message = { 
+    id: 'initial',
+    role: 'assistant', 
+    parts: [{ 
+        type: 'text', 
+        content: `# RepoInsight ChatOps 시스템 활성화\n리포지토리 분석, 보안 취약점 점검, 코드 품질 리뷰 등 프로젝트 최적화 프로토콜을 제안해 드립니다.\n\n### 시작 가이드\n1. 오른쪽 사이드바에서 **분석할 저장소**를 선택하세요.\n2. 상단 툴바에서 필요한 **Skill**이나 **Context Hook**을 활성화하세요.\n3. 특정 PR이나 파일을 부착하여 정밀 분석을 요청할 수 있습니다.` 
+    }],
+    timestamp: new Date()
+};
+
 /**
  * ChatOps 기능을 관리하는 커스텀 훅 (v3.1 - GitHub Insight Expansion)
  */
 export const useChatOps = (initialModel: string = 'gemini-1.5-flash') => {
-    const [messages, setMessages] = useState<Message[]>([]);
+    const [messages, setMessages] = useState<Message[]>([INITIAL_MESSAGE]);
     const [models, setModels] = useState<AIModel[]>([]);
     const [currentModel, setCurrentModel] = useState<string>(initialModel);
     const [sessions, setSessions] = useState<ChatSession[]>([]);
@@ -60,9 +71,17 @@ export const useChatOps = (initialModel: string = 'gemini-1.5-flash') => {
 
     const createNewSession = useCallback(() => {
         const newId = Date.now().toString();
-        const newSession: ChatSession = { id: newId, title: 'New Analysis Session', messages: [], model: currentModel, timestamp: new Date(), draftInput: '', isLoading: false };
+        const newSession: ChatSession = { 
+            id: newId, 
+            title: 'New Analysis Session', 
+            messages: [INITIAL_MESSAGE],
+            model: currentModel, 
+            timestamp: new Date(), 
+            draftInput: '', 
+            isLoading: false 
+        };
         setSessions(prev => [newSession, ...prev].slice(0, 20));
-        setMessages([]);
+        setMessages([INITIAL_MESSAGE]);
         setCurrentSessionId(newId);
         setSelectedHooks([]);
         setAttachedResources([]);
@@ -72,7 +91,7 @@ export const useChatOps = (initialModel: string = 'gemini-1.5-flash') => {
         if (currentSessionId) {
             setSessions(prev => prev.map(s => s.id === currentSessionId ? { ...s, draftInput: currentInput } : s));
         }
-        setMessages([...(session.messages || [])]);
+        setMessages([...(session.messages || [INITIAL_MESSAGE])]);
         setCurrentModel(session.model);
         setCurrentSessionId(session.id);
         return session.draftInput || '';
@@ -128,10 +147,14 @@ export const useChatOps = (initialModel: string = 'gemini-1.5-flash') => {
                         last.parts.push({ type: 'text', content });
                     }
                 } else {
-                    const targetPart = [...last.parts].reverse().find(p => p.type === 'thought' && !p.content.startsWith('Completed:') && !p.content.startsWith('Failed:'));
-                    if (targetPart && (content.startsWith('Completed:') || content.startsWith('Failed:') || content.includes('Analyzing'))) {
+                    const targetPart = [...last.parts].reverse().find(p => 
+                        p.type === 'thought' && 
+                        !p.content?.startsWith('Completed:') && 
+                        !p.content?.startsWith('Failed:')
+                    );
+                    if (targetPart && content && (content.startsWith('Completed:') || content.startsWith('Failed:') || content.includes('Analyzing'))) {
                         targetPart.content = content;
-                    } else if (!last.parts.some(p => p.type === 'thought' && p.content === content)) {
+                    } else if (content && !last.parts.some(p => p.type === 'thought' && p.content === content)) {
                         last.parts.push({ type: 'thought', content });
                     }
                 }
@@ -149,13 +172,12 @@ export const useChatOps = (initialModel: string = 'gemini-1.5-flash') => {
         let activeId: string = sessionId || Date.now().toString();
 
         try {
-            // UI용 입력값 구성 (@리소스 태그 포함)
             const hookTags = selectedHooks.map(h => `@${h}`).join(' ');
             const resTags = attachedResources.map(r => `@${r.type.toUpperCase()}:${r.name}`).join(' ');
             const displayInput = [hookTags, resTags, input].filter(Boolean).join('\n');
 
             if (!sessionId) {
-                const newSession: ChatSession = { id: activeId, title: input.substring(0, 30), messages: [], model: currentModel, timestamp: new Date(), draftInput: '', isLoading: true };
+                const newSession: ChatSession = { id: activeId, title: input.substring(0, 30), messages: [INITIAL_MESSAGE], model: currentModel, timestamp: new Date(), draftInput: '', isLoading: true };
                 setSessions(prev => [newSession, ...prev]);
                 setCurrentSessionId(activeId);
             } else {
@@ -168,10 +190,9 @@ export const useChatOps = (initialModel: string = 'gemini-1.5-flash') => {
             const userMsg: Message = { id: Date.now().toString(), role: 'user', parts: [{ type: 'text', content: displayInput }], timestamp: new Date() };
             const aiMsg: Message = { id: (Date.now() + 1).toString(), role: 'assistant', parts: [], timestamp: new Date(), model: currentModel };
 
-            const nextMessages: Message[] = [...(baseMessages || []), userMsg, aiMsg];
+            const nextMessages: Message[] = [...(baseMessages || [INITIAL_MESSAGE]), userMsg, aiMsg];
             setMessages(nextMessages);
 
-            // 실제 프롬프트용 데이터 수집
             let hookContext = '';
             if (selectedHooks.length > 0) {
                 const contents = await Promise.all(selectedHooks.map(async h => {
@@ -191,7 +212,6 @@ export const useChatOps = (initialModel: string = 'gemini-1.5-flash') => {
 
             if (history.length > 0 && history[0].role === 'model') history.shift();
 
-            // API 요청
             const res = await fetch(API_ENDPOINTS.CHAT_STREAM, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
@@ -201,11 +221,10 @@ export const useChatOps = (initialModel: string = 'gemini-1.5-flash') => {
                     model: currentModel, 
                     selectedRepo, 
                     activeSkillId,
-                    attachedResources // 백엔드에서 컨텍스트 로드 수행
+                    attachedResources
                 }),
             });
 
-            // 소모성 상태 초기화
             setSelectedHooks([]);
             setAttachedResources([]);
 
@@ -227,11 +246,13 @@ export const useChatOps = (initialModel: string = 'gemini-1.5-flash') => {
                     }
                 }
             }
-        } catch (error) { console.error('전송 오류:', error); } finally {
+        } catch (error) { 
+            console.error('전송 오류:', error);
+        } finally {
             isSendingRef.current = false;
             setSessions(prev => prev.map(s => s.id === activeId ? { ...s, isLoading: false } : s));
         }
-    }, [currentModel, sessions, parseStreamChunk, activeSkillId, selectedHooks, attachedResources]);
+    }, [currentModel, sessions, parseStreamChunk, activeSkillId, selectedHooks, attachedResources, messages]);
 
     return { 
         messages, setMessages, models, currentModel, setCurrentModel, 

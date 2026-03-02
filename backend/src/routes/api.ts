@@ -95,6 +95,21 @@ router.post('/models/select', (req: Request, res: Response) => {
 });
 
 /**
+ * POST /api/diagnose
+ * 텔레메트리 기반 가상 진단 프로토콜 생성
+ */
+router.post('/diagnose', async (req: Request, res: Response) => {
+    const { message } = req.body;
+    if (!message) return res.status(400).json({ error: 'message is required' });
+    try {
+        const protocol = await getAiDiagnosis(message);
+        res.json({ protocol });
+    } catch (error: any) {
+        res.status(500).json({ error: error.message });
+    }
+});
+
+/**
  * POST /api/chat/stream (v3.1 - GitHub Insight Expansion)
  */
 router.post('/chat/stream', async (req: Request, res: Response) => {
@@ -208,7 +223,9 @@ router.post('/chat/stream', async (req: Request, res: Response) => {
         res.end();
     } catch (error: any) {
         qaLogger.error('agent.fatal_error', { message: error.message });
-        res.write(`data: ${JSON.stringify({ error: '시스템 분석 중 오류가 발생했습니다.' })}\n\n`);
+        const errorMsg = `\n\n⚠️ **분석 중 오류 발생**: ${error.message}\n현재 선택된 모델(\`${model}\`)을 사용할 수 없거나 할당량이 초과되었을 수 있습니다. 다른 모델(예: gemini-1.5-flash)로 변경하여 다시 시도해 주세요.`;
+        res.write(`data: ${JSON.stringify({ type: 'answer', text: errorMsg })}\n\n`);
+        res.write(`data: ${JSON.stringify({ done: true })}\n\n`);
         res.end();
     }
 });

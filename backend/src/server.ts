@@ -47,7 +47,7 @@ app.use('/api', apiRoutes);
 
 // 기본 헬스 체크
 app.get('/', (req: Request, res: Response) => {
-  res.send('Nura Health Backend Server is running securely!');
+  res.send('RepoInsight Backend Server is running securely!');
 });
 
 // 서버 실행: 0.0.0.0 바인딩을 통해 로컬 네트워크 접근성 확보

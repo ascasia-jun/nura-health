@@ -1,10 +1,10 @@
-# GEMINI.md - Nura Health (AI-DLC Service)
+# GEMINI.md - RepoInsight (Dev Lifecycle Intelligence Platform)
 
-이 파일은 Nura Health 프로젝트의 구조, 기술 스택, 개발 컨벤션 및 실행 방법을 정의합니다. 모든 AI 에이전트는 이 지침을 최우선으로 준수해야 합니다.
+이 파일은 RepoInsight 프로젝트의 구조, 기술 스택, 개발 컨벤션 및 실행 방법을 정의합니다. 모든 AI 에이전트는 이 지침을 최우선으로 준수해야 합니다.
 
 ## 1. 프로젝트 개요 (Project Overview)
 
-**Nura Health**는 단순한 정적 데모를 넘어, 실제 사용자 데이터와 상호작용하며 개인화된 AI 진단 및 처방을 제공하는 **동적 AI-DLC(Development Life-Cycle) 플랫폼**입니다.
+**RepoInsight**는 단순한 정적 데모를 넘어, 실제 사용자 데이터와 상호작용하며 개인화된 AI 진단 및 처방을 제공하는 **동적 AI-DLC(Development Life-Cycle) 플랫폼**입니다.
 
 - **목표:** 개발 생명주기 전반에 걸쳐 AI 기반의 통찰력과 최적화 프로토콜을 제공.
 - **주요 기능:**
@@ -35,14 +35,14 @@
 
 ### 백엔드 서버 실행 (Port: 3001)
 ```bash
-cd nura-health/backend
+cd repoinsight/backend
 npm install
 npm run dev
 ```
 
 ### 프론트엔드 서버 실행 (Port: 5173 - 기본값)
 ```bash
-cd nura-health
+cd repoinsight
 npm install
 npm run dev
 ```
@@ -81,7 +81,7 @@ npm run dev
 
 ## 5. 주요 파일 구조 (Key Directory Structure)
 
-- `nura-health/`
+- `repoinsight/`
     - `backend/src/`
         - `server.ts`: 백엔드 진입점.
         - `routes/api.ts`: API 엔드포인트 정의.

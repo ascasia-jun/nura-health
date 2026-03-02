@@ -1,6 +1,6 @@
 # 개발 맥락 노트 (context_notes.md)
 
-이 문서는 Nura Health AI-DLC 서비스 개발 프로젝트의 주요 기술적 맥락과 주의사항을 기록합니다.
+이 문서는 RepoInsight AI-DLC 서비스 개발 프로젝트의 주요 기술적 맥락과 주의사항을 기록합니다.
 
 ## 1. 핵심 목표
 *   **From:** 시각적 컨셉을 소개하는 '정적 데모(Static Demo)' 웹사이트

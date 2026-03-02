@@ -132,7 +132,7 @@ export const ChatOpsPage: React.FC = () => {
             <aside className="w-72 bg-slate-900/50 border-r border-white/5 flex flex-col hidden md:flex backdrop-blur-xl">
                 <div className="p-6 flex items-center gap-3 border-b border-white/5">
                     <div className="w-8 h-8 bg-cyan-500 rounded-lg flex items-center justify-center text-slate-900 shadow-[0_0_15px_rgba(6,182,212,0.5)]"><Bot size={20} /></div>
-                    <span className="font-bold text-lg tracking-tight text-slate-100">Nura ChatOps</span>
+                    <span className="font-bold text-lg tracking-tight text-slate-100">RepoInsight ChatOps</span>
                 </div>
                 <div className="p-4 border-b border-white/5 relative">
                     <button onClick={() => setIsModelListOpen(!isModelListOpen)} className="w-full flex items-center justify-between gap-2 px-3 py-2 bg-white/5 hover:bg-white/10 rounded-lg border border-white/10 transition-colors text-xs font-mono">

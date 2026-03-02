@@ -1,6 +1,6 @@
-# Nura Health: AI-DLC Service
+# RepoInsight: Dev Lifecycle Intelligence Service
 
-**Nura Health**는 정적인 컨셉 데모 사이트를 넘어, 실제 사용자 데이터와 상호작용하며 개인화된 AI 진단 및 처방을 제공하는 **동적 AI-DLC(Development Life-Cycle) 플랫폼**입니다.
+**RepoInsight**는 정적인 컨셉 데모 사이트를 넘어, 실제 사용자 데이터와 상호작용하며 개인화된 AI 진단 및 처방을 제공하는 **동적 Dev Lifecycle Intelligence(Development Life-Cycle) 플랫폼**입니다.
 
 ## 🚀 주요 기능
 
