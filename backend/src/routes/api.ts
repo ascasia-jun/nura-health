@@ -19,7 +19,6 @@ import { encrypt, decrypt } from '../utils/security';
 
 const router = Router();
 
-// --- [Utility: Get User Token] ---
 const getUserCredential = async (userId: string, serviceName: string) => {
     try {
         const db = getDb();
@@ -59,27 +58,53 @@ router.get('/credentials', async (req: Request, res: Response) => {
     } catch (e) { res.status(500).json({ error: 'Failed' }); }
 });
 
+/**
+ * POST /api/credentials
+ * [v3.8 Refinement] 상세 에러 메시지 제공 및 저장 로직 안정화
+ */
 router.post('/credentials', async (req: Request, res: Response) => {
     const userId = req.headers['x-user-id'] as string;
     const { serviceName, token, preferred_model } = req.body;
     if (!userId) return res.status(401).json({ error: 'Unauthorized' });
+    
     try {
         const db = getDb();
+        
+        // 1. Gemini 검증 (상세 에러 포함)
         if (serviceName === 'gemini' && token) {
-            const isValid = await validateGeminiKey(token);
-            if (!isValid) return res.status(400).json({ error: '유효하지 않은 Gemini API 키입니다.' });
+            const verification = await validateGeminiKey(token);
+            if (!verification.isValid) {
+                return res.status(400).json({ error: verification.error || '유효하지 않은 Gemini 키입니다.' });
+            }
         }
+
+        // 2. 선호 모델 업데이트
         if (serviceName === 'gemini' && preferred_model) {
             await db.run('UPDATE users SET preferred_model = ? WHERE id = ?', [preferred_model, userId]);
         }
+        
+        // 3. 암호화 및 저장
         if (token) {
-            const encrypted = encrypt(token);
+            let encrypted = '';
+            try {
+                encrypted = encrypt(token);
+            } catch (encErr) {
+                return res.status(500).json({ error: '데이터 암호화 중 내부 오류가 발생했습니다.' });
+            }
+
             const existing = await db.get('SELECT id FROM user_credentials WHERE user_id = ? AND service_name = ?', [userId, serviceName]);
-            if (existing) await db.run('UPDATE user_credentials SET encrypted_token = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?', [encrypted, existing.id]);
-            else await db.run('INSERT INTO user_credentials (user_id, service_name, encrypted_token) VALUES (?, ?, ?)', [userId, serviceName, encrypted]);
+            if (existing) {
+                await db.run('UPDATE user_credentials SET encrypted_token = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?', [encrypted, existing.id]);
+            } else {
+                await db.run('INSERT INTO user_credentials (user_id, service_name, encrypted_token) VALUES (?, ?, ?)', [userId, serviceName, encrypted]);
+            }
         }
-        res.json({ success: true });
-    } catch (e) { res.status(500).json({ error: 'Save failed' }); }
+        
+        res.json({ success: true, message: 'Settings saved successfully.' });
+    } catch (error: any) { 
+        console.error('[API] Credentials error:', error.message);
+        res.status(500).json({ error: `저장 중 오류 발생: ${error.message}` }); 
+    }
 });
 
 // --- [User Session & History API] ---

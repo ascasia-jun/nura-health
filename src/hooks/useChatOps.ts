@@ -206,6 +206,7 @@ export const useChatOps = (initialModel: string = 'gemini-2.0-flash') => {
         isSendingRef.current = true;
         let activeId: string = sessionId || '';
         try {
+            // [v3.8] 히스토리 구성 로직 강화
             const history = messages
                 .filter(m => (m.parts || []).some(p => p.type === 'text' && p.content.trim() !== ''))
                 .slice(-10)
@@ -238,11 +239,6 @@ export const useChatOps = (initialModel: string = 'gemini-2.0-flash') => {
                 }));
                 hookContext = contents.join('\n\n');
             }
-
-            // [v3.8] 개별 Gemini API Key 조회
-            const credRes = await fetch(`${API_URL}/api/credentials`, { headers: getHeaders() as any });
-            const credData = await credRes.json();
-            const userGeminiKey = credData.creds?.find((c: any) => c.service_name === 'gemini') ? 'EXISTS' : null;
 
             const res = await fetch(API_ENDPOINTS.CHAT_STREAM, { 
                 method: 'POST', 

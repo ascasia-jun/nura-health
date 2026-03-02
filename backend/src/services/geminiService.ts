@@ -7,30 +7,32 @@ dotenv.config();
 let currentModelName = "gemini-2.0-flash";
 
 /**
- * [v3.8] API Key 유효성 검증
+ * [v3.8 Refinement] API Key 유효성 검증 - 상세 에러 처리 추가
  */
-export const validateGeminiKey = async (apiKey: string): Promise<boolean> => {
+export const validateGeminiKey = async (apiKey: string): Promise<{isValid: boolean, error?: string}> => {
     try {
+        console.log(`[Gemini] Requesting model list to verify key...`);
         const res = await axios.get(`https://generativelanguage.googleapis.com/v1beta/models?key=${apiKey}`, {
-            timeout: 5000
+            timeout: 10000 // 10초로 연장
         });
-        return res.status === 200;
+        return { isValid: res.status === 200 };
     } catch (e: any) {
-        return false;
+        const errorMsg = e.response?.data?.error?.message || e.message;
+        console.error('[Gemini] Validation failed:', errorMsg);
+        
+        if (e.code === 'ECONNREFUSED' || e.code === 'ENOTFOUND') {
+            return { isValid: false, error: '구글 API 서버에 접속할 수 없습니다. 네트워크 설정을 확인하세요.' };
+        }
+        return { isValid: false, error: `인증 실패: ${errorMsg}` };
     }
 };
 
-/**
- * AI 응답을 생성하기 위한 제네레이티브 모델 인스턴스를 가져옵니다.
- */
 const getModel = (modelName: string = currentModelName, userApiKey?: string) => {
     const apiKey = userApiKey || process.env.GEMINI_API_KEY;
     if (!apiKey) throw new Error("GEMINI_API_KEY is missing.");
-
     const genAI = new GoogleGenerativeAI(apiKey);
     const deprecatedModels = ["gemini-1.5-flash", "gemini-1.5-pro", "gemini-2.0-flash-exp"];
     const targetModel = deprecatedModels.includes(modelName) ? "gemini-2.0-flash" : modelName;
-
     return genAI.getGenerativeModel({
         model: targetModel,
         generationConfig: { temperature: 0.7, topK: 40, topP: 0.95, maxOutputTokens: 8192 },
@@ -43,9 +45,6 @@ const getModel = (modelName: string = currentModelName, userApiKey?: string) => 
     });
 };
 
-/**
- * AI 스트리밍 응답을 생성합니다.
- */
 export const getAiChatStreamResponse = async (prompt: string, history: any[], context?: string, modelName?: string, userApiKey?: string) => {
     const model = getModel(modelName || currentModelName, userApiKey);
     const chat = model.startChat({
@@ -58,33 +57,19 @@ export const getAiChatStreamResponse = async (prompt: string, history: any[], co
     return await chat.sendMessageStream(fullPrompt);
 };
 
-/**
- * [v3.8 Refinement] 사용자의 키를 사용하여 가용한 모델 목록을 실시간으로 조회합니다.
- */
 export const listAvailableModels = async (userApiKey?: string) => {
     const apiKey = userApiKey || process.env.GEMINI_API_KEY;
     if (!apiKey) return [{ name: "gemini-2.0-flash", description: "Default (Key missing)" }];
-
     try {
-        const res = await axios.get(`https://generativelanguage.googleapis.com/v1beta/models?key=${apiKey}`);
+        const res = await axios.get(`https://generativelanguage.googleapis.com/v1beta/models?key=${apiKey}`, { timeout: 10000 });
         const allModels = res.data.models || [];
-        
-        // 유효한 텍스트 생성 모델만 필터링 (gemini 시리즈)
         const filtered = allModels
             .filter((m: any) => m.name.startsWith('models/gemini') && m.supportedGenerationMethods.includes('generateContent'))
-            .map((m: any) => ({
-                name: m.name.replace('models/', ''),
-                description: m.description || m.displayName
-            }))
-            .filter((m: any) => !["gemini-1.5-flash", "gemini-1.5-pro", "gemini-2.0-flash-exp"].includes(m.name)); // 구형 모델 제외
-
+            .map((m: any) => ({ name: m.name.replace('models/', ''), description: m.description || m.displayName }))
+            .filter((m: any) => !["gemini-1.5-flash", "gemini-1.5-pro", "gemini-2.0-flash-exp"].includes(m.name));
         return filtered.length > 0 ? filtered : [{ name: "gemini-2.0-flash", description: "Gemini 2.0 Flash" }];
     } catch (e) {
-        // 오류 발생 시 기본 라인업 반환
-        return [
-            { name: "gemini-2.0-flash", description: "Next-gen high speed (System Default)" },
-            { name: "gemini-2.0-pro-exp", description: "Highest intelligence (Experimental)" }
-        ];
+        return [{ name: "gemini-2.0-flash", description: "Gemini 2.0 Flash" }, { name: "gemini-2.0-pro-exp", description: "Gemini 2.0 Pro" }];
     }
 };
 
