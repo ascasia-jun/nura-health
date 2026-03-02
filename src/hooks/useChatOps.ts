@@ -25,7 +25,7 @@ const INITIAL_MESSAGE: Message = {
 };
 
 /**
- * ChatOps 기능을 관리하는 커스텀 훅 (v3.8 - Dynamic Model Refresh)
+ * ChatOps 기능을 관리하는 커스텀 훅 (v3.8 - History Logic Hardened)
  */
 export const useChatOps = (initialModel: string = 'gemini-2.0-flash') => {
     const { user } = useUser();
@@ -50,9 +50,6 @@ export const useChatOps = (initialModel: string = 'gemini-2.0-flash') => {
         'x-user-id': user?.id || ''
     }), [user]);
 
-    /**
-     * [v3.8] 가용 AI 모델 목록을 서버에서 새로 불러옵니다.
-     */
     const refreshModels = useCallback(async () => {
         if (!user) return;
         try {
@@ -60,7 +57,6 @@ export const useChatOps = (initialModel: string = 'gemini-2.0-flash') => {
             const data = await res.json();
             if (data.models) {
                 setModels(data.models);
-                // 현재 선택된 모델이 새 목록에 없으면 기본값으로 변경
                 if (data.currentModel && !data.models.some((m: any) => m.name === currentModel)) {
                     setCurrentModel(data.currentModel);
                 }
@@ -72,15 +68,10 @@ export const useChatOps = (initialModel: string = 'gemini-2.0-flash') => {
         const init = async () => {
             if (!user) return;
             try {
-                // 1. 초기 모델 로드
                 await refreshModels();
-                
-                // 2. 스킬 로드
                 const sRes = await fetch(`${API_URL}/api/skills`);
                 const sData = await sRes.json();
                 if (sData.skills) setSkills(sData.skills);
-
-                // 3. 세션 목록 로드
                 const sessRes = await fetch(`${API_URL}/api/sessions`, { headers: getHeaders() as any });
                 const sessData = await sessRes.json();
                 if (sessData.sessions) setSessions(sessData.sessions);
@@ -197,6 +188,21 @@ export const useChatOps = (initialModel: string = 'gemini-2.0-flash') => {
         isSendingRef.current = true;
         let activeId: string = sessionId || '';
         try {
+            // [중요] History 구성: 현재 보내는 메시지는 'history' 배열에서 제외해야 함
+            // Gemini API는 (past_history) + (current_message) 형태로 호출됨
+            const history = messages
+                .filter(m => (m.parts || []).some(p => p.type === 'text' && p.content.trim() !== ''))
+                .slice(-10) // 토큰 최적화를 위해 최근 10개만 유지
+                .map(m => ({
+                    role: m.role === 'user' ? 'user' : 'model',
+                    parts: (m.parts || []).filter(p => p.type === 'text' && p.content.trim() !== '').map(p => ({ text: p.content }))
+                }));
+
+            // 첫 메시지가 model(assistant)인 경우 제거 (user로 시작해야 함)
+            while (history.length > 0 && history[0].role === 'model') {
+                history.shift();
+            }
+
             if (!activeId) {
                 const res = await fetch(`${API_URL}/api/sessions`, { method: 'POST', headers: getHeaders() as any, body: JSON.stringify({ title: input.substring(0, 30), model: currentModel }) });
                 const data = await res.json();
@@ -206,12 +212,12 @@ export const useChatOps = (initialModel: string = 'gemini-2.0-flash') => {
                 setSessions(prev => [newSession, ...prev]);
                 setCurrentSessionId(activeId);
             } else { setSessions(prev => prev.map(s => s.id === activeId ? { ...s, isLoading: true } : s)); }
-            const targetSession = sessions.find(s => s.id === activeId);
-            const baseMessages = targetSession?.messages || messages;
+
             const userMsg: Message = { id: Date.now().toString(), role: 'user', parts: [{ type: 'text', content: input }], timestamp: new Date(), meta: { activeSkillId, selectedHooks: [...selectedHooks], attachedResources: [...attachedResources] } };
             const aiMsg: Message = { id: (Date.now() + 1).toString(), role: 'assistant', parts: [], timestamp: new Date(), model: currentModel };
-            const nextMessages: Message[] = [...(baseMessages || [INITIAL_MESSAGE]), userMsg, aiMsg];
-            setMessages(nextMessages);
+
+            setMessages(prev => [...prev, userMsg, aiMsg]);
+
             let hookContext = '';
             if (selectedHooks.length > 0) {
                 const contents = await Promise.all(selectedHooks.map(async h => {
@@ -221,13 +227,23 @@ export const useChatOps = (initialModel: string = 'gemini-2.0-flash') => {
                 }));
                 hookContext = contents.join('\n\n');
             }
-            const history = nextMessages.filter(m => (m.parts || []).some(p => p.type === 'text' && p.content.trim() !== '')).slice(-15).map(m => ({
-                role: m.role === 'user' ? 'user' : 'model',
-                parts: (m.parts || []).filter(p => p.type === 'text' && p.content.trim() !== '').map(p => ({ text: p.content }))
-            }));
-            if (history.length > 0 && history[0].role === 'model') history.shift();
-            const res = await fetch(API_ENDPOINTS.CHAT_STREAM, { method: 'POST', headers: getHeaders() as any, body: JSON.stringify({ message: hookContext ? `${hookContext}\n\n---\n\n${input}` : input, history, model: currentModel, selectedRepo, activeSkillId, attachedResources, sessionId: activeId }), });
+
+            const res = await fetch(API_ENDPOINTS.CHAT_STREAM, { 
+                method: 'POST', 
+                headers: getHeaders() as any, 
+                body: JSON.stringify({ 
+                    message: hookContext ? `${hookContext}\n\n---\n\n${input}` : input, 
+                    history, // 정제된 과거 내역만 전송
+                    model: currentModel, 
+                    selectedRepo, 
+                    activeSkillId, 
+                    attachedResources, 
+                    sessionId: activeId 
+                }), 
+            });
+
             setSelectedHooks([]); setAttachedResources([]);
+
             const reader = res.body?.getReader();
             const decoder = new TextDecoder();
             let lineBuffer = '';
@@ -247,10 +263,10 @@ export const useChatOps = (initialModel: string = 'gemini-2.0-flash') => {
             isSendingRef.current = false;
             setSessions(prev => prev.map(s => s.id === activeId ? { ...s, isLoading: false } : s));
         }
-    }, [user, currentModel, sessions, parseStreamChunk, activeSkillId, selectedHooks, attachedResources, messages, getHeaders]);
+    }, [user, currentModel, messages, parseStreamChunk, activeSkillId, selectedHooks, attachedResources, getHeaders]);
 
     return { 
-        messages, setMessages, models, currentModel, setCurrentModel, refreshModels, // refreshModels 노출
+        messages, setMessages, models, currentModel, setCurrentModel, refreshModels,
         sessions, currentSessionId, createNewSession, loadSession, sendMessage, updateSessionTitle,
         skills, activeSkillId, setActiveSkillId, selectedHooks, toggleHook, attachedResources, toggleResource, removeResource
     };
