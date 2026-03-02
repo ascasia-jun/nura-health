@@ -4,7 +4,6 @@ import dotenv from 'dotenv';
 
 dotenv.config();
 
-// [v3.8] 공식 서비스용 최신 표준 모델로 기본값 변경
 let currentModelName = "gemini-2.0-flash";
 
 /**
@@ -12,13 +11,11 @@ let currentModelName = "gemini-2.0-flash";
  */
 export const validateGeminiKey = async (apiKey: string): Promise<boolean> => {
     try {
-        // 가장 가벼운 모델 목록 조회 엔드포인트로 유효성 확인
         const res = await axios.get(`https://generativelanguage.googleapis.com/v1beta/models?key=${apiKey}`, {
-            timeout: 5000 // 5초 타임아웃
+            timeout: 5000
         });
         return res.status === 200;
     } catch (e: any) {
-        console.error('[Gemini] Key validation failed:', e.response?.data || e.message);
         return false;
     }
 };
@@ -31,18 +28,12 @@ const getModel = (modelName: string = currentModelName, userApiKey?: string) => 
     if (!apiKey) throw new Error("GEMINI_API_KEY is missing.");
 
     const genAI = new GoogleGenerativeAI(apiKey);
-    
     const deprecatedModels = ["gemini-1.5-flash", "gemini-1.5-pro", "gemini-2.0-flash-exp"];
     const targetModel = deprecatedModels.includes(modelName) ? "gemini-2.0-flash" : modelName;
 
     return genAI.getGenerativeModel({
         model: targetModel,
-        generationConfig: {
-            temperature: 0.7,
-            topK: 40,
-            topP: 0.95,
-            maxOutputTokens: 8192,
-        },
+        generationConfig: { temperature: 0.7, topK: 40, topP: 0.95, maxOutputTokens: 8192 },
         safetySettings: [
             { category: HarmCategory.HARM_CATEGORY_HARASSMENT, threshold: HarmBlockThreshold.BLOCK_NONE },
             { category: HarmCategory.HARM_CATEGORY_HATE_SPEECH, threshold: HarmBlockThreshold.BLOCK_NONE },
@@ -63,19 +54,38 @@ export const getAiChatStreamResponse = async (prompt: string, history: any[], co
             parts: h.parts.map((p: any) => ({ text: p.text || p.content || "" }))
         })),
     });
-
     const fullPrompt = context ? `Context: ${context}\n\nUser Message: ${prompt}` : prompt;
     return await chat.sendMessageStream(fullPrompt);
 };
 
 /**
- * [v3.8] 공식 지원 모델 라인업 정문화
+ * [v3.8 Refinement] 사용자의 키를 사용하여 가용한 모델 목록을 실시간으로 조회합니다.
  */
-export const listAvailableModels = async () => {
-    return [
-        { name: "gemini-2.0-flash", description: "Next-gen high speed & high accuracy (Recommended)" },
-        { name: "gemini-2.0-pro-exp", description: "Highest intelligence for complex reasoning" }
-    ];
+export const listAvailableModels = async (userApiKey?: string) => {
+    const apiKey = userApiKey || process.env.GEMINI_API_KEY;
+    if (!apiKey) return [{ name: "gemini-2.0-flash", description: "Default (Key missing)" }];
+
+    try {
+        const res = await axios.get(`https://generativelanguage.googleapis.com/v1beta/models?key=${apiKey}`);
+        const allModels = res.data.models || [];
+        
+        // 유효한 텍스트 생성 모델만 필터링 (gemini 시리즈)
+        const filtered = allModels
+            .filter((m: any) => m.name.startsWith('models/gemini') && m.supportedGenerationMethods.includes('generateContent'))
+            .map((m: any) => ({
+                name: m.name.replace('models/', ''),
+                description: m.description || m.displayName
+            }))
+            .filter((m: any) => !["gemini-1.5-flash", "gemini-1.5-pro", "gemini-2.0-flash-exp"].includes(m.name)); // 구형 모델 제외
+
+        return filtered.length > 0 ? filtered : [{ name: "gemini-2.0-flash", description: "Gemini 2.0 Flash" }];
+    } catch (e) {
+        // 오류 발생 시 기본 라인업 반환
+        return [
+            { name: "gemini-2.0-flash", description: "Next-gen high speed (System Default)" },
+            { name: "gemini-2.0-pro-exp", description: "Highest intelligence (Experimental)" }
+        ];
+    }
 };
 
 export const setCurrentModel = (name: string) => { currentModelName = name; };

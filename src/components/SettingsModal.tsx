@@ -7,11 +7,15 @@ interface SettingsModalProps {
     isOpen: boolean;
     onClose: () => void;
     currentModel: string;
+    refreshModels: () => Promise<void>; // [v3.8] 추가
 }
 
 type SettingsTab = 'Profile' | 'Admin' | 'Credentials';
 
-export const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose, currentModel }) => {
+/**
+ * [v3.8] 통합 크리덴셜 및 공개 저장소 관리 시스템
+ */
+export const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose, currentModel, refreshModels }) => {
     const { user, logout, updateLocalUser } = useUser();
     const [activeTab, setActiveTab] = useState<SettingsTab>('Profile');
     
@@ -26,7 +30,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose, c
     const [credStatus, setCredStatus] = useState<any>({ github: false, gemini: false });
     const [ghToken, setGhToken] = useState('');
     const [geminiKey, setGeminiKey] = useState('');
-    const [isVerifying, setIsVerifying] = useState(false); // [v3.8] 검증 중 상태
+    const [isVerifying, setIsVerifying] = useState(false);
     const [publicRepoUrl, setPublicRepoUrl] = useState('');
     const [publicRepos, setPublicRepos] = useState<string[]>([]);
     
@@ -104,6 +108,11 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose, c
                 setStatusMsg({ type: 'success', text: `${serviceName.toUpperCase()} 연동이 완료되었습니다.` });
                 if (serviceName === 'github') setGhToken(''); else setGeminiKey('');
                 fetchCredentials();
+                
+                // [v3.8] 키 저장 성공 시 즉시 모델 목록 갱신 트리거
+                if (serviceName === 'gemini') {
+                    await refreshModels();
+                }
             } else {
                 setStatusMsg({ type: 'error', text: data.error || '연동 실패' });
             }

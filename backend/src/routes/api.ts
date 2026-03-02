@@ -68,7 +68,7 @@ router.post('/credentials', async (req: Request, res: Response) => {
     try {
         if (serviceName === 'gemini') {
             const isValid = await validateGeminiKey(token);
-            if (!isValid) return res.status(400).json({ error: 'Invalid API Key' });
+            if (!isValid) return res.status(400).json({ error: '유효하지 않은 Gemini API 키입니다.' });
         }
         const db = getDb();
         const encrypted = encrypt(token);
@@ -79,7 +79,7 @@ router.post('/credentials', async (req: Request, res: Response) => {
     } catch (e) { res.status(500).json({ error: 'Save failed' }); }
 });
 
-// --- [User Session & History API - RESTORED] ---
+// --- [User Session & History API] ---
 
 router.get('/sessions', async (req: Request, res: Response) => {
     const userId = req.headers['x-user-id'] as string;
@@ -233,12 +233,17 @@ router.get('/context/hook', async (req: Request, res: Response) => {
     } catch (e) { res.status(500).json({ error: 'Failed' }); }
 });
 
+/**
+ * [v3.8 Refinement] 사용자별 키를 사용하여 모델 목록 조회
+ */
 router.get('/models', async (req: Request, res: Response) => {
+    const userId = req.headers['x-user-id'] as string;
     try {
-        const models = await listAvailableModels();
+        const geminiKey = await getUserCredential(userId, 'gemini');
+        const models = await listAvailableModels(geminiKey || undefined);
         const currentModel = getCurrentModel();
         res.json({ models, currentModel });
-    } catch (error) { res.status(500).json({ error: 'Failed' }); }
+    } catch (error) { res.status(500).json({ error: 'Failed to fetch models' }); }
 });
 
 router.post('/models/select', (req: Request, res: Response) => {
