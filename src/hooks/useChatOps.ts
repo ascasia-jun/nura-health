@@ -7,10 +7,10 @@ import type { ChatSession, Message, AIModel } from '../types/chat';
 if (!CHAT_MODULE_LOADED) console.warn('Chat types module not loaded');
 
 /**
- * 부착된 리소스의 타입을 정의합니다.
+ * 부착된 리소스의 타입을 정의합니다. (v3.7 - folder 타입 추가)
  */
 export interface AttachedResource {
-    type: 'pr' | 'commit' | 'file';
+    type: 'pr' | 'commit' | 'file' | 'folder';
     id: string;
     name: string;
     owner: string;
@@ -29,7 +29,7 @@ const INITIAL_MESSAGE: Message = {
 };
 
 /**
- * ChatOps 기능을 관리하는 커스텀 훅 (v3.6 - Sidebar Refinement Support)
+ * ChatOps 기능을 관리하는 커스텀 훅 (v3.7 - UI Upgrade Support)
  */
 export const useChatOps = (initialModel: string = 'gemini-1.5-flash') => {
     const [messages, setMessages] = useState<Message[]>([INITIAL_MESSAGE]);
@@ -89,9 +89,6 @@ export const useChatOps = (initialModel: string = 'gemini-1.5-flash') => {
         return session.draftInput || '';
     }, [currentSessionId]);
 
-    /**
-     * [v3.6] 세션 제목을 업데이트합니다.
-     */
     const updateSessionTitle = useCallback((sessionId: string, newTitle: string) => {
         setSessions(prev => prev.map(s => s.id === sessionId ? { ...s, title: newTitle } : s));
     }, []);
@@ -126,19 +123,15 @@ export const useChatOps = (initialModel: string = 'gemini-1.5-flash') => {
     const parseStreamChunk = useCallback((rawData: string, targetId: string) => {
         try {
             const parsed = JSON.parse(rawData);
-            
             if (parsed.done) {
                 setMessages(prev => {
                     const next = [...prev];
                     const last = next[next.length - 1];
-                    if (last && last.role === 'assistant') {
-                        last.isDone = true;
-                    }
+                    if (last && last.role === 'assistant') last.isDone = true;
                     return next;
                 });
                 return true;
             }
-
             const type = parsed.type === 'answer' ? 'text' : 'thought';
             const content = parsed.type === 'answer' ? parsed.text : parsed.content;
 
@@ -172,11 +165,7 @@ export const useChatOps = (initialModel: string = 'gemini-1.5-flash') => {
                         last.parts.push({ type: 'text', content });
                     }
                 } else {
-                    const targetPart = [...last.parts].reverse().find(p => 
-                        p.type === 'thought' && 
-                        !p.content?.startsWith('Completed:') && 
-                        !p.content?.startsWith('Failed:')
-                    );
+                    const targetPart = [...last.parts].reverse().find(p => p.type === 'thought' && !p.content?.startsWith('Completed:') && !p.content?.startsWith('Failed:'));
                     if (targetPart && (content.startsWith('Completed:') || content.startsWith('Failed:') || content.includes('Analyzing'))) {
                         targetPart.content = content;
                     } else if (content && !last.parts.some(p => p.type === 'thought' && p.content === content)) {
@@ -192,7 +181,6 @@ export const useChatOps = (initialModel: string = 'gemini-1.5-flash') => {
 
     const sendMessage = useCallback(async (input: string, sessionId: string | null, selectedRepo?: any) => {
         if (!input.trim() || isSendingRef.current) return;
-        
         isSendingRef.current = true;
         let activeId: string = sessionId || Date.now().toString();
 
@@ -208,17 +196,7 @@ export const useChatOps = (initialModel: string = 'gemini-1.5-flash') => {
             const targetSession = sessions.find(s => s.id === activeId);
             const baseMessages = targetSession?.messages || messages;
             
-            const userMsg: Message = { 
-                id: Date.now().toString(), 
-                role: 'user', 
-                parts: [{ type: 'text', content: input }], 
-                timestamp: new Date(),
-                meta: {
-                    activeSkillId,
-                    selectedHooks: [...selectedHooks],
-                    attachedResources: [...attachedResources]
-                }
-            };
+            const userMsg: Message = { id: Date.now().toString(), role: 'user', parts: [{ type: 'text', content: input }], timestamp: new Date(), meta: { activeSkillId, selectedHooks: [...selectedHooks], attachedResources: [...attachedResources] } };
             const aiMsg: Message = { id: (Date.now() + 1).toString(), role: 'assistant', parts: [], timestamp: new Date(), model: currentModel };
 
             const nextMessages: Message[] = [...(baseMessages || [INITIAL_MESSAGE]), userMsg, aiMsg];
@@ -233,27 +211,17 @@ export const useChatOps = (initialModel: string = 'gemini-1.5-flash') => {
                 hookContext = contents.join('\n\n');
             }
 
-            const history = nextMessages
-                .filter(m => (m.parts || []).some(p => p.type === 'text' && p.content.trim() !== ''))
-                .slice(-15)
-                .map(m => ({
-                    role: m.role === 'user' ? 'user' : 'model',
-                    parts: (m.parts || []).filter(p => p.type === 'text' && p.content.trim() !== '').map(p => ({ text: p.content }))
-                }));
+            const history = nextMessages.filter(m => (m.parts || []).some(p => p.type === 'text' && p.content.trim() !== '')).slice(-15).map(m => ({
+                role: m.role === 'user' ? 'user' : 'model',
+                parts: (m.parts || []).filter(p => p.type === 'text' && p.content.trim() !== '').map(p => ({ text: p.content }))
+            }));
 
             if (history.length > 0 && history[0].role === 'model') history.shift();
 
             const res = await fetch(API_ENDPOINTS.CHAT_STREAM, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ 
-                    message: hookContext ? `${hookContext}\n\n---\n\n${input}` : input, 
-                    history, 
-                    model: currentModel, 
-                    selectedRepo, 
-                    activeSkillId,
-                    attachedResources
-                }),
+                body: JSON.stringify({ message: hookContext ? `${hookContext}\n\n---\n\n${input}` : input, history, model: currentModel, selectedRepo, activeSkillId, attachedResources }),
             });
 
             setSelectedHooks([]);
@@ -262,7 +230,6 @@ export const useChatOps = (initialModel: string = 'gemini-1.5-flash') => {
             const reader = res.body?.getReader();
             const decoder = new TextDecoder();
             let lineBuffer = '';
-
             if (reader) {
                 while (true) {
                     const { done, value } = await reader.read();
@@ -277,9 +244,7 @@ export const useChatOps = (initialModel: string = 'gemini-1.5-flash') => {
                     }
                 }
             }
-        } catch (error) { 
-            console.error('전송 오류:', error);
-        } finally {
+        } catch (error) { console.error('전송 오류:', error); } finally {
             isSendingRef.current = false;
             setSessions(prev => prev.map(s => s.id === activeId ? { ...s, isLoading: false } : s));
         }
@@ -287,10 +252,7 @@ export const useChatOps = (initialModel: string = 'gemini-1.5-flash') => {
 
     return { 
         messages, setMessages, models, currentModel, setCurrentModel, 
-        sessions, currentSessionId, createNewSession, loadSession, sendMessage,
-        updateSessionTitle, // [추가]
-        skills, activeSkillId, setActiveSkillId, 
-        selectedHooks, toggleHook,
-        attachedResources, toggleResource, removeResource
+        sessions, currentSessionId, createNewSession, loadSession, sendMessage, updateSessionTitle,
+        skills, activeSkillId, setActiveSkillId, selectedHooks, toggleHook, attachedResources, toggleResource, removeResource
     };
 };

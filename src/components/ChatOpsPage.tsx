@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect, useCallback, useMemo } from 'react';
-import { Send, Bot, LogOut, Sparkles, Code, Terminal, MessageSquare, Plus, Settings, RotateCcw, User, ChevronDown, Loader2, Github, X, FileText, Zap, Hash, ExternalLink, GitPullRequest, GitMerge, FileCode, Folder, ChevronRight, Search, Check, Eye, Mail, Download, Edit2, Box, Wrench } from 'lucide-react';
+import { Send, Bot, LogOut, Sparkles, Code, Terminal, MessageSquare, Plus, Settings, RotateCcw, User, ChevronDown, Loader2, Github, X, FileText, Zap, Hash, ExternalLink, GitPullRequest, GitMerge, FileCode, Folder, FolderOpen, ChevronRight, Search, Check, Eye, Mail, Download, Edit2, Box, Wrench, Info } from 'lucide-react';
 import { useUser } from '../context/UserContext';
 import { API_URL } from '../config';
 import { SettingsModal } from './SettingsModal';
@@ -10,6 +10,16 @@ import { ChatLoader } from './Chat/ChatLoader';
 import { ContentPreviewModal } from './Chat/ContentPreviewModal';
 
 type SidebarTab = 'PR' | 'Push' | 'Code';
+
+// [v3.7] MCP 도구 상세 명세 데이터
+const MCP_TOOL_SPECS: Record<string, string> = {
+    'grep_search': "# grep_search\n\n리포지토리 전역에서 특정 문자열이나 정규표현식 패턴을 검색합니다.\n\n### Parameters\n- `query`: 검색할 문자열 또는 정규표현식\n\n### Usage\n- 보안 취약점 패턴 탐지 (예: `eval(`, `apiKey`)\n- 특정 함수의 모든 사용처 조사\n- 환경 설정 키워드 추적",
+    'glob': "# glob\n\n와일드카드 패턴을 사용하여 조건에 맞는 파일 목록을 탐색합니다.\n\n### Parameters\n- `pattern`: Glob 패턴 (예: `**/*.ts`, `src/components/*.tsx`)\n\n### Usage\n- 특정 확장자 파일 일괄 식별\n- 프로젝트 폴더 구조 분석\n- 설정 파일 자동 탐색",
+    'read_many_files': "# read_many_files\n\n최대 10개의 파일 내용을 병렬로 한 번에 읽어옵니다.\n\n### Parameters\n- `paths`: 읽어올 파일 경로들의 배열\n\n### Usage\n- 상호 연관된 모듈 동시 분석\n- 아키텍처 의존성 확인\n- 대량의 코드 리뷰 수행 시 속도 향상",
+    'list_files': "# list_files\n\n지정한 경로의 파일 및 디렉토리 목록을 가져옵니다.\n\n### Parameters\n- `path`: 탐색할 디렉토리 경로 (기본값: 루트)\n\n### Usage\n- 초기 프로젝트 구조 파악\n- 디렉토리 계층 이동 및 탐색",
+    'read_file': "# read_file\n\n특정 파일의 전체 소스 코드를 정밀하게 읽어옵니다.\n\n### Parameters\n- `path`: 읽을 파일의 경로\n\n### Usage\n- 핵심 로직 상세 분석\n- 버그 원인 파악 및 코드 수정 제안",
+    'read_pr_diff': "# read_pr_diff\n\n특정 Pull Request의 코드 변경 사항(Diff)을 읽어옵니다.\n\n### Parameters\n- `pull_number`: PR 번호\n\n### Usage\n- 코드 리뷰 및 변경 영향도 평가\n- 신규 기능 구현 사항 검증"
+};
 
 export const ChatOpsPage: React.FC = () => {
     const { logout } = useUser();
@@ -22,9 +32,11 @@ export const ChatOpsPage: React.FC = () => {
     const [isRightSidebarOpen, setIsRightSidebarOpen] = useState(true);
     const [activeTab, setActiveTab] = useState<SidebarTab>('PR');
     
-    // [v3.6] 세션 편집 상태
     const [editingSessionId, setEditingSessionId] = useState<string | null>(null);
     const [editTitleValue, setEditTitleValue] = useState('');
+
+    // [v3.7] 폴더 확장 상태 관리
+    const [expandedFolders, setExpandedFolders] = useState<Set<string>>(new Set(['']));
 
     const [isPreviewOpen, setIsPreviewOpen] = useState(false);
     const [previewContent, setPreviewContent] = useState('');
@@ -117,7 +129,7 @@ export const ChatOpsPage: React.FC = () => {
         await sendMessage(`저장소 \`${selectedRepo.full_name}\` 분석 요청`, currentSessionId, selectedRepo);
     };
 
-    const handleResourceToggle = (type: 'pr' | 'commit' | 'file', item: any) => {
+    const handleResourceToggle = (type: 'pr' | 'commit' | 'file' | 'folder', item: any) => {
         if (!selectedRepo) return;
         const [owner, repo] = selectedRepo.full_name.split('/');
         const resource = {
@@ -139,11 +151,16 @@ export const ChatOpsPage: React.FC = () => {
         } catch (e) { console.error('모델 변경 실패'); }
     };
 
-    const handleOpenPreview = async (type: 'skill' | 'hook', id: string, name: string) => {
+    const handleOpenPreview = async (type: 'skill' | 'hook' | 'mcp', id: string, name: string) => {
         setIsPreviewLoading(true);
         setPreviewTitle(name);
         setIsPreviewOpen(true);
         try {
+            if (type === 'mcp') {
+                setPreviewContent(MCP_TOOL_SPECS[id] || '명세 정보가 없습니다.');
+                setIsPreviewLoading(false);
+                return;
+            }
             let url = '';
             if (type === 'skill') url = `${API_URL}/api/skills/${id}/content`;
             else url = `${API_URL}/api/context/hook?fileName=${id}`;
@@ -182,7 +199,6 @@ export const ChatOpsPage: React.FC = () => {
         return skill ? skill.name : id.toUpperCase();
     };
 
-    // [v3.6] 세션 제목 편집 처리
     const startEditing = (e: React.MouseEvent, id: string, title: string) => {
         e.stopPropagation();
         setEditingSessionId(id);
@@ -194,9 +210,20 @@ export const ChatOpsPage: React.FC = () => {
         setEditingSessionId(null);
     };
 
+    // [v3.7] 폴더 토글 함수
+    const toggleFolder = (e: React.MouseEvent, path: string) => {
+        e.stopPropagation();
+        setExpandedFolders(prev => {
+            const next = new Set(prev);
+            if (next.has(path)) next.delete(path);
+            else next.add(path);
+            return next;
+        });
+    };
+
     return (
         <div className="flex h-screen bg-slate-950 text-slate-200 font-sans overflow-hidden">
-            {/* 왼쪽 사이드바 (Session Management) */}
+            {/* 왼쪽 사이드바 */}
             <aside className="w-72 bg-slate-900/50 border-r border-white/5 flex flex-col hidden md:flex backdrop-blur-xl">
                 <div className="p-6 flex items-center gap-3 border-b border-white/5">
                     <div className="w-8 h-8 bg-cyan-500 rounded-lg flex items-center justify-center text-slate-900 shadow-[0_0_15px_rgba(6,182,212,0.5)]"><Bot size={20} /></div>
@@ -218,24 +245,11 @@ export const ChatOpsPage: React.FC = () => {
                     {(sessions || []).map(s => (
                         <div key={s.id} className="relative group/session">
                             {editingSessionId === s.id ? (
-                                <input 
-                                    autoFocus
-                                    value={editTitleValue}
-                                    onChange={(e) => setEditTitleValue(e.target.value)}
-                                    onBlur={() => saveTitle(s.id)}
-                                    onKeyDown={(e) => { if (e.key === 'Enter') saveTitle(s.id); if (e.key === 'Escape') setEditingSessionId(null); }}
-                                    className="w-full px-4 py-2 bg-slate-800 text-white rounded-lg border border-cyan-500/50 outline-none text-sm"
-                                />
+                                <input autoFocus value={editTitleValue} onChange={(e) => setEditTitleValue(e.target.value)} onBlur={() => saveTitle(s.id)} onKeyDown={(e) => { if (e.key === 'Enter') saveTitle(s.id); if (e.key === 'Escape') setEditingSessionId(null); }} className="w-full px-4 py-2 bg-slate-800 text-white rounded-lg border border-cyan-500/50 outline-none text-sm" />
                             ) : (
                                 <button onClick={() => setInput(loadSession(s, input))} className={`w-full flex items-center justify-between gap-3 px-4 py-2 rounded-lg transition-colors text-sm text-left truncate ${currentSessionId === s.id ? 'bg-cyan-500/10 text-cyan-400 border border-cyan-500/20' : 'text-slate-400 hover:bg-white/5'}`}>
-                                    <div className="flex items-center gap-3 truncate">
-                                        <MessageSquare size={14} className="shrink-0" />
-                                        <span className="truncate">{s.title}</span>
-                                    </div>
-                                    <div className="flex items-center gap-2">
-                                        <Edit2 size={12} className="opacity-0 group-hover/session:opacity-100 hover:text-white transition-all shrink-0" onClick={(e) => startEditing(e, s.id, s.title)} />
-                                        {s.isLoading && <Loader2 size={12} className="animate-spin text-cyan-400 shrink-0" />}
-                                    </div>
+                                    <div className="flex items-center gap-3 truncate"><MessageSquare size={14} className="shrink-0" /><span className="truncate">{s.title}</span></div>
+                                    <div className="flex items-center gap-2"><Edit2 size={12} className="opacity-0 group-hover/session:opacity-100 hover:text-white transition-all shrink-0" onClick={(e) => startEditing(e, s.id, s.title)} />{s.isLoading && <Loader2 size={12} className="animate-spin text-cyan-400 shrink-0" />}</div>
                                 </button>
                             )}
                         </div>
@@ -255,7 +269,6 @@ export const ChatOpsPage: React.FC = () => {
                         const isDone = msg.isDone || false;
                         const lastTextPartIdx = [...(msg.parts || [])].reverse().findIndex(p => p.type === 'text');
                         const actualLastTextPartIdx = lastTextPartIdx === -1 ? -1 : (msg.parts?.length || 0) - 1 - lastTextPartIdx;
-
                         return (
                             <div key={idx} className={`flex gap-4 max-w-4xl mx-auto ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}>
                                 {msg.role === 'assistant' && (msg.parts?.length || 0) > 0 && (
@@ -326,7 +339,7 @@ export const ChatOpsPage: React.FC = () => {
                     <div ref={messagesEndRef} />
                 </div>
 
-                {/* 입력창 영역 */}
+                {/* 입력창 및 툴바 영역 */}
                 <div className="p-6 md:p-10 bg-slate-900/60 backdrop-blur-3xl border-t border-white/5 space-y-4">
                     <div className="max-w-4xl mx-auto flex flex-col gap-4 px-2">
                         <div className="flex items-center gap-3">
@@ -344,8 +357,7 @@ export const ChatOpsPage: React.FC = () => {
                                             {(skills || []).map(s => (
                                                 <div key={s.id} className="relative group/item">
                                                     <button onClick={() => { setActiveSkillId(s.id); setIsSkillListOpen(false); }} className={`w-full flex items-center gap-2 px-3 py-2.5 rounded-xl border text-left transition-all duration-200 ${activeSkillId === s.id ? 'bg-amber-500/20 border-amber-500/50 text-amber-400 ring-1 ring-amber-500/30' : 'bg-white/5 border-white/10 text-slate-400 hover:bg-amber-500/10 hover:border-amber-500/30 hover:text-amber-300'}`}>
-                                                        <Zap size={10} className={activeSkillId === s.id ? 'text-amber-400' : 'text-slate-600 group-hover:text-amber-400'} />
-                                                        <span className="text-[10px] font-bold truncate pr-4 leading-none">{s.name}</span>
+                                                        <Zap size={10} className={activeSkillId === s.id ? 'text-amber-400' : 'text-slate-600 group-hover:text-amber-400'} /><span className="text-[10px] font-bold truncate pr-4 leading-none">{s.name}</span>
                                                     </button>
                                                     <button onClick={(e) => { e.stopPropagation(); handleOpenPreview('skill', s.id, s.name); }} className="absolute right-2 top-1/2 -translate-y-1/2 p-1.5 text-slate-600 hover:text-cyan-400 opacity-0 group-hover/item:opacity-100 transition-all"><Eye size={12} /></button>
                                                 </div>
@@ -382,7 +394,6 @@ export const ChatOpsPage: React.FC = () => {
                                 <button onClick={resetAllSelections} className="flex items-center gap-1.5 px-3 py-2 text-slate-500 hover:text-red-400 transition-colors text-[10px] font-bold uppercase tracking-tighter"><RotateCcw size={12} /> Reset All</button>
                             )}
                         </div>
-
                         {(selectedHooks?.length > 0 || attachedResources?.length > 0) && (
                             <div className="flex flex-wrap gap-2 py-2 px-1 animate-in fade-in slide-in-from-bottom-1 duration-300">
                                 {selectedHooks.map(h => (
@@ -394,20 +405,9 @@ export const ChatOpsPage: React.FC = () => {
                             </div>
                         )}
                     </div>
-
                     <div className="max-w-4xl mx-auto relative group">
-                        <textarea
-                            value={input}
-                            onChange={(e) => setInput(e.target.value)}
-                            onKeyDown={(e) => { if (!e.nativeEvent.isComposing && e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleSendMessage(); } }}
-                            placeholder={activeSkillId ? `Ask anything with [${getSkillName(activeSkillId)}] skill...` : "AI에게 프로젝트 분석 명령을 입력하세요..."}
-                            className={`w-full bg-slate-800/40 text-slate-100 rounded-2xl pr-16 border border-white/10 focus:outline-none focus:border-cyan-500 shadow-2xl resize-none min-h-[64px] max-h-48 custom-scrollbar transition-all py-5 pl-6`}
-                            disabled={isCurrentSessionLoading}
-                            rows={1}
-                        />
-                        <button onClick={handleSendMessage} disabled={!input.trim() || isCurrentSessionLoading} className={`absolute right-4 bottom-4 p-3 rounded-xl transition-all shadow-lg ${!input.trim() || isCurrentSessionLoading ? 'bg-white/5 text-white/10' : 'bg-cyan-500 text-slate-900 hover:bg-cyan-400'}`}>
-                            {isCurrentSessionLoading ? <Loader2 size={22} className="animate-spin" /> : <Send size={22} />}
-                        </button>
+                        <textarea value={input} onChange={(e) => setInput(e.target.value)} onKeyDown={(e) => { if (!e.nativeEvent.isComposing && e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleSendMessage(); } }} placeholder={activeSkillId ? `Ask anything with [${getSkillName(activeSkillId)}] skill...` : "AI에게 프로젝트 분석 명령을 입력하세요..."} className={`w-full bg-slate-800/40 text-slate-100 rounded-2xl pr-16 border border-white/10 focus:outline-none focus:border-cyan-500 shadow-2xl resize-none min-h-[64px] max-h-48 custom-scrollbar transition-all py-5 pl-6`} disabled={isCurrentSessionLoading} rows={1} />
+                        <button onClick={handleSendMessage} disabled={!input.trim() || isCurrentSessionLoading} className={`absolute right-4 bottom-4 p-3 rounded-xl transition-all shadow-lg ${!input.trim() || isCurrentSessionLoading ? 'bg-white/5 text-white/10' : 'bg-cyan-500 text-slate-900 hover:bg-cyan-400'}`}>{isCurrentSessionLoading ? <Loader2 size={22} className="animate-spin" /> : <Send size={22} />}</button>
                     </div>
                 </div>
             </main>
@@ -418,7 +418,6 @@ export const ChatOpsPage: React.FC = () => {
             {/* 오른쪽 사이드바 (Analysis & Tools) */}
             {isRightSidebarOpen && (
                 <aside className="w-80 bg-slate-900/50 border-l border-white/5 flex flex-col backdrop-blur-xl animate-in slide-in-from-right duration-300">
-                    {/* Repository Header */}
                     <div className="p-6 border-b border-white/5">
                         <div className="flex items-center justify-between mb-4">
                             <div className="flex items-center gap-2"><Github size={18} className="text-slate-400" /><span className="font-bold text-sm text-slate-100">Repositories</span></div>
@@ -426,103 +425,81 @@ export const ChatOpsPage: React.FC = () => {
                         </div>
                         <div className="flex items-center gap-2">
                             <div className="relative flex-1">
-                                <select onChange={(e) => setSelectedRepo(repositories.find(r => r.id === Number(e.target.value)))} className="w-full bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-xs text-slate-300 appearance-none pr-8" value={selectedRepo?.id || ''}>
-                                    <option value="">Select a repository...</option>
-                                    {repositories.map(repo => <option key={repo.id} value={repo.id}>{repo.name}</option>)}
-                                </select>
+                                <select onChange={(e) => setSelectedRepo(repositories.find(r => r.id === Number(e.target.value)))} className="w-full bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-xs text-slate-300 appearance-none pr-8" value={selectedRepo?.id || ''}><option value="">Select a repository...</option>{repositories.map(repo => <option key={repo.id} value={repo.id}>{repo.name}</option>)}</select>
                                 <ChevronDown size={14} className="absolute right-3 top-2.5 text-slate-500 pointer-events-none" />
                             </div>
-                            <button 
-                                onClick={handleAnalyzeSourceCode} 
-                                disabled={!selectedRepo || isCurrentSessionLoading}
-                                className="p-2.5 bg-cyan-500 text-slate-950 rounded-lg hover:bg-white transition-all shadow-glow disabled:opacity-30 disabled:cursor-not-allowed"
-                                title="Analyze whole repository"
-                            >
-                                <Sparkles size={16} />
-                            </button>
+                            <button onClick={handleAnalyzeSourceCode} disabled={!selectedRepo || isCurrentSessionLoading} className="p-2.5 bg-cyan-500 text-slate-950 rounded-lg hover:bg-white transition-all shadow-glow disabled:opacity-30 disabled:cursor-not-allowed" title="Analyze whole repository"><Sparkles size={16} /></button>
                         </div>
                     </div>
 
-                    {selectedRepo ? (
+                    <div className="flex-1 flex flex-col min-h-0">
+                        {/* Middle Area: Tabs or Placeholder */}
                         <div className="flex-1 flex flex-col min-h-0">
-                            {/* Tabs Area (Middle 2/3 approx) */}
-                            <div className="flex-1 flex flex-col min-h-0">
-                                <div className="flex border-b border-white/5 bg-black/20">
-                                    {(['PR', 'Push', 'Code'] as SidebarTab[]).map(tab => (
-                                        <button key={tab} onClick={() => { setActiveTab(tab); setSidebarSearch(''); }} className={`flex-1 py-3 text-[10px] font-black uppercase tracking-widest transition-all border-b-2 ${activeTab === tab ? 'border-cyan-500 text-cyan-400 bg-cyan-500/5' : 'border-transparent text-slate-500'}`}>{tab}</button>
-                                    ))}
-                                </div>
-                                <div className="px-3 py-2 border-b border-white/5 bg-white/5">
-                                    <div className="relative"><Search size={12} className="absolute left-3 top-2.5 text-slate-600" /><input type="text" placeholder={`Filter ${activeTab}...`} value={sidebarSearch} onChange={(e) => setSidebarSearch(e.target.value)} className="w-full bg-black/20 border border-white/5 rounded-full pl-8 pr-4 py-1.5 text-[10px] text-slate-300 focus:outline-none" /></div>
-                                </div>
-                                <div className="flex-1 overflow-y-auto custom-scrollbar p-3">
-                                    {isDataLoading ? <div className="flex flex-col items-center justify-center h-full opacity-30 gap-2"><Loader2 size={24} className="animate-spin" /></div> : (
-                                        <div className="flex flex-col gap-1.5">
-                                            {activeTab === 'PR' && (filteredItems || []).map(pr => (
-                                                <button key={pr.id} onClick={() => handleResourceToggle('pr', pr)} className={`w-full p-3 bg-white/5 border rounded-xl group transition-all text-left flex flex-col gap-2 hover:bg-white/10 ${attachedResources.find(r => r.type === 'pr' && r.id === String(pr.number)) ? 'border-indigo-500 bg-indigo-500/10 shadow-[0_0_15px_rgba(99,102,241,0.2)]' : 'border-white/5'}`}>
-                                                    <div className="flex justify-between items-start gap-2">
-                                                        <span className={`text-xs font-bold transition-colors uppercase flex-1 line-clamp-2 ${attachedResources.find(r => r.type === 'pr' && r.id === String(pr.number)) ? 'text-indigo-400' : 'text-slate-200 group-hover:text-cyan-400'}`}>{pr.title}</span>
-                                                        <a href={pr.html_url} target="_blank" rel="noreferrer" onClick={(e) => e.stopPropagation()} className="p-1 hover:bg-white/10 rounded text-slate-500 shrink-0"><ExternalLink size={12} /></a>
-                                                    </div>
-                                                    <div className="flex items-center justify-between text-[9px] font-mono opacity-50"><span>#{pr.number} by {pr.user?.login}</span><span className={`px-1.5 py-0.5 rounded ${pr.state === 'open' ? 'bg-emerald-500/20 text-emerald-400' : 'bg-slate-500/20 text-slate-400'}`}>{pr.state}</span></div>
-                                                </button>
-                                            ))}
-                                            {activeTab === 'Push' && (filteredItems || []).map(commit => (
-                                                <button key={commit.sha} onClick={() => handleResourceToggle('commit', commit)} className={`w-full p-3 bg-white/5 border rounded-xl group transition-all text-left flex flex-col gap-1 hover:bg-white/10 ${attachedResources.find(r => r.type === 'commit' && r.id === commit.sha) ? 'border-indigo-500 bg-indigo-500/10 shadow-[0_0_15px_rgba(99,102,241,0.2)]' : 'border-white/5'}`}>
-                                                    <div className="flex justify-between items-start gap-2">
-                                                        <span className={`text-xs font-bold transition-colors flex-1 line-clamp-2 ${attachedResources.find(r => r.type === 'commit' && r.id === commit.sha) ? 'text-indigo-400' : 'text-slate-200 group-hover:text-cyan-400'}`}>{commit.commit.message}</span>
-                                                        <a href={commit.html_url} target="_blank" rel="noreferrer" onClick={(e) => e.stopPropagation()} className="p-1 hover:bg-white/10 rounded text-slate-500 shrink-0"><ExternalLink size={12} /></a>
-                                                    </div>
-                                                    <div className="flex items-center justify-between text-[9px] font-mono opacity-50"><span>{commit.sha.substring(0, 7)}</span><span>{new Date(commit.commit.author.date).toLocaleDateString()}</span></div>
-                                                </button>
-                                            ))}
-                                            {activeTab === 'Code' && (filteredItems || []).map(file => {
-                                                const depth = file.path.split('/').length - 1;
-                                                const name = file.path.split('/').pop();
-                                                const isAttached = attachedResources.find(r => r.type === 'file' && r.id === file.path);
-                                                return (
-                                                    <button key={file.path} onClick={() => file.type === 'blob' && handleResourceToggle('file', file)} className={`w-full group flex items-center justify-between gap-2 py-0.5 px-2 rounded-lg transition-all hover:bg-white/10 ${isAttached ? 'bg-indigo-500/10 border border-indigo-500/30' : ''}`} style={{ marginLeft: `${depth * 8}px`, width: `calc(100% - ${depth * 8}px)` }}>
-                                                        <div className={`flex-1 flex items-center gap-2 truncate text-left ${isAttached ? 'text-indigo-400 font-black' : 'text-slate-400 group-hover:text-slate-200'}`}>
-                                                            {file.type === 'tree' ? <Folder size={10} className="text-cyan-500 shrink-0" /> : <FileCode size={10} className="text-slate-500 shrink-0" />}
-                                                            <span className="text-[10px] truncate font-mono">{name}</span>
-                                                        </div>
-                                                        {file.type === 'blob' && <div className={`w-1.5 h-1.5 rounded-full ${isAttached ? 'bg-indigo-500' : 'bg-transparent'}`} />}
-                                                    </button>
-                                                );
-                                            })}
-                                        </div>
-                                    )}
-                                </div>
-                            </div>
+                            {selectedRepo ? (
+                                <>
+                                    <div className="flex border-b border-white/5 bg-black/20">{(['PR', 'Push', 'Code'] as SidebarTab[]).map(tab => (<button key={tab} onClick={() => { setActiveTab(tab); setSidebarSearch(''); }} className={`flex-1 py-3 text-[10px] font-black uppercase tracking-widest transition-all border-b-2 ${activeTab === tab ? 'border-cyan-500 text-cyan-400 bg-cyan-500/5' : 'border-transparent text-slate-500'}`}>{tab}</button>))}</div>
+                                    <div className="px-3 py-2 border-b border-white/5 bg-white/5"><div className="relative"><Search size={12} className="absolute left-3 top-2.5 text-slate-600" /><input type="text" placeholder={`Filter ${activeTab}...`} value={sidebarSearch} onChange={(e) => setSidebarSearch(e.target.value)} className="w-full bg-black/20 border border-white/5 rounded-full pl-8 pr-4 py-1.5 text-[10px] text-slate-300 focus:outline-none" /></div></div>
+                                    <div className="flex-1 overflow-y-auto custom-scrollbar p-3">
+                                        {isDataLoading ? <div className="flex flex-col items-center justify-center h-full opacity-30 gap-2"><Loader2 size={24} className="animate-spin" /></div> : (
+                                            <div className="flex flex-col gap-1">
+                                                {activeTab === 'PR' && (filteredItems || []).map(pr => (<button key={pr.id} onClick={() => handleResourceToggle('pr', pr)} className={`w-full p-3 bg-white/5 border rounded-xl group transition-all text-left flex flex-col gap-2 hover:bg-white/10 ${attachedResources.find(r => r.type === 'pr' && r.id === String(pr.number)) ? 'border-indigo-500 bg-indigo-500/10 shadow-[0_0_15px_rgba(99,102,241,0.2)]' : 'border-white/5'}`}><div className="flex justify-between items-start gap-2"><span className={`text-xs font-bold transition-colors uppercase flex-1 line-clamp-2 ${attachedResources.find(r => r.type === 'pr' && r.id === String(pr.number)) ? 'text-indigo-400' : 'text-slate-200 group-hover:text-cyan-400'}`}>{pr.title}</span><a href={pr.html_url} target="_blank" rel="noreferrer" onClick={(e) => e.stopPropagation()} className="p-1 hover:bg-white/10 rounded text-slate-500 shrink-0"><ExternalLink size={12} /></a></div><div className="flex items-center justify-between text-[9px] font-mono opacity-50"><span>#{pr.number} by {pr.user?.login}</span><span className={`px-1.5 py-0.5 rounded ${pr.state === 'open' ? 'bg-emerald-500/20 text-emerald-400' : 'bg-slate-500/20 text-slate-400'}`}>{pr.state}</span></div></button>))}
+                                                {activeTab === 'Push' && (filteredItems || []).map(commit => (<button key={commit.sha} onClick={() => handleResourceToggle('commit', commit)} className={`w-full p-3 bg-white/5 border rounded-xl group transition-all text-left flex flex-col gap-1 hover:bg-white/10 ${attachedResources.find(r => r.type === 'commit' && r.id === commit.sha) ? 'border-indigo-500 bg-indigo-500/10 shadow-[0_0_15px_rgba(99,102,241,0.2)]' : 'border-white/5'}`}><div className="flex justify-between items-start gap-2"><span className={`text-xs font-bold transition-colors flex-1 line-clamp-2 ${attachedResources.find(r => r.type === 'commit' && r.id === commit.sha) ? 'text-indigo-400' : 'text-slate-200 group-hover:text-cyan-400'}`}>{commit.commit.message}</span><a href={commit.html_url} target="_blank" rel="noreferrer" onClick={(e) => e.stopPropagation()} className="p-1 hover:bg-white/10 rounded text-slate-500 shrink-0"><ExternalLink size={12} /></a></div><div className="flex items-center justify-between text-[9px] font-mono opacity-50"><span>{commit.sha.substring(0, 7)}</span><span>{new Date(commit.commit.author.date).toLocaleDateString()}</span></div></button>))}
+                                                {activeTab === 'Code' && (filteredItems || []).map(file => {
+                                                    const depth = file.path.split('/').length - 1;
+                                                    const name = file.path.split('/').pop();
+                                                    const isFolder = file.type === 'tree';
+                                                    const isExpanded = expandedFolders.has(file.path);
+                                                    const isAttached = attachedResources.find(r => r.type === (isFolder ? 'folder' : 'file') && r.id === file.path);
+                                                    
+                                                    // 부모 폴더가 닫혀있는지 체크
+                                                    const parentPath = file.path.substring(0, file.path.lastIndexOf('/'));
+                                                    if (parentPath && !expandedFolders.has(parentPath)) return null;
 
-                            {/* [v3.6] MCP 도구 목록 섹션 (Bottom 1/3) */}
-                            <div className="h-1/3 bg-black/40 border-t border-white/10 flex flex-col">
-                                <div className="p-4 border-b border-white/5 flex items-center gap-2 bg-white/5">
-                                    <Wrench size={14} className="text-amber-400" />
-                                    <span className="text-[10px] font-black text-slate-300 uppercase tracking-[0.2em]">Available MCP Tools</span>
-                                </div>
-                                <div className="flex-1 overflow-y-auto p-4 custom-scrollbar">
-                                    <div className="grid grid-cols-1 gap-2">
-                                        {[
-                                            { name: 'grep_search', desc: 'Global text search' },
-                                            { name: 'glob', desc: 'Pattern-based file listing' },
-                                            { name: 'read_many_files', desc: 'Batch file reading' },
-                                            { name: 'list_files', desc: 'Directory exploration' },
-                                            { name: 'read_file', desc: 'Precise code reading' },
-                                            { name: 'read_pr_diff', desc: 'PR change analysis' }
-                                        ].map(tool => (
-                                            <div key={tool.name} className="p-2 rounded-lg bg-white/5 border border-white/5 group hover:border-amber-500/30 transition-all">
-                                                <div className="text-[10px] font-bold text-slate-200 mb-0.5 font-mono">{tool.name}</div>
-                                                <div className="text-[9px] text-slate-500 font-light leading-tight">{tool.desc}</div>
+                                                    return (
+                                                        <button key={file.path} onClick={(e) => isFolder ? toggleFolder(e, file.path) : handleResourceToggle('file', file)} className={`w-full group flex items-center justify-between gap-2 py-0.5 px-2 rounded-lg transition-all hover:bg-white/10 ${isAttached ? 'bg-indigo-500/10 border border-indigo-500/30' : ''}`} style={{ marginLeft: `${depth * 8}px`, width: `calc(100% - ${depth * 8}px)` }}>
+                                                            <div className={`flex-1 flex items-center gap-2 truncate text-left ${isAttached ? 'text-indigo-400 font-black' : 'text-slate-400 group-hover:text-slate-200'}`}>
+                                                                {isFolder ? (isExpanded ? <ChevronDown size={10} /> : <ChevronRight size={10} />) : <div className="w-[10px]" />}
+                                                                {isFolder ? (isExpanded ? <FolderOpen size={10} className="text-cyan-400 shrink-0" /> : <Folder size={10} className="text-cyan-500 shrink-0" />) : <FileCode size={10} className="text-slate-500 shrink-0" />}
+                                                                <span className="text-[10px] truncate font-mono">{name}</span>
+                                                            </div>
+                                                            <div className="flex items-center gap-1">
+                                                                {isFolder && <button onClick={(e) => { e.stopPropagation(); handleResourceToggle('folder', file); }} className={`p-0.5 rounded ${isAttached ? 'bg-red-500/20 text-red-400' : 'bg-cyan-500/20 text-cyan-500 opacity-0 group-hover:opacity-100'}`}>{isAttached ? <X size={8} /> : <Plus size={8} />}</button>}
+                                                                {!isFolder && file.type === 'blob' && <div className={`w-1.5 h-1.5 rounded-full ${isAttached ? 'bg-indigo-500' : 'bg-transparent'}`} />}
+                                                            </div>
+                                                        </button>
+                                                    );
+                                                })}
                                             </div>
-                                        ))}
+                                        )}
                                     </div>
+                                </>
+                            ) : (
+                                <div className="flex-1 flex flex-col items-center justify-center p-8 text-center opacity-20"><Github size={48} className="mb-4" /><p className="text-xs uppercase tracking-widest font-black">Select a repository<br/>to explore insights</p></div>
+                            )}
+                        </div>
+
+                        {/* [v3.7] MCP 도구 목록 섹션 (Always Visible) */}
+                        <div className="h-1/3 bg-black/40 border-t border-white/10 flex flex-col">
+                            <div className="p-4 border-b border-white/5 flex items-center gap-2 bg-white/5"><Wrench size={14} className="text-amber-400" /><span className="text-[10px] font-black text-slate-300 uppercase tracking-[0.2em]">Available MCP Tools</span></div>
+                            <div className="flex-1 overflow-y-auto p-4 custom-scrollbar">
+                                <div className="grid grid-cols-1 gap-2">
+                                    {[
+                                        { id: 'grep_search', name: 'grep_search', desc: 'Global text search' },
+                                        { id: 'glob', name: 'glob', desc: 'Pattern-based file listing' },
+                                        { id: 'read_many_files', name: 'read_many_files', desc: 'Batch file reading' },
+                                        { id: 'list_files', name: 'list_files', desc: 'Directory exploration' },
+                                        { id: 'read_file', name: 'read_file', desc: 'Precise code reading' },
+                                        { id: 'read_pr_diff', name: 'read_pr_diff', desc: 'PR change analysis' }
+                                    ].map(tool => (
+                                        <div key={tool.id} className="relative group/tool p-2 rounded-lg bg-white/5 border border-white/5 hover:border-amber-500/30 transition-all flex justify-between items-center">
+                                            <div className="flex-1"><div className="text-[10px] font-bold text-slate-200 mb-0.5 font-mono">{tool.name}</div><div className="text-[9px] text-slate-500 font-light leading-tight">{tool.desc}</div></div>
+                                            <button onClick={() => handleOpenPreview('mcp', tool.id, tool.name)} className="p-1.5 text-slate-600 hover:text-amber-400 opacity-0 group-hover/tool:opacity-100 transition-all"><Info size={12} /></button>
+                                        </div>
+                                    ))}
                                 </div>
                             </div>
                         </div>
-                    ) : (
-                        <div className="flex-1 flex flex-col items-center justify-center p-8 text-center opacity-20"><Github size={48} className="mb-4" /><p className="text-xs uppercase tracking-widest font-black">Select a repository<br/>to explore insights</p></div>
-                    )}
+                    </div>
                 </aside>
             )}
         </div>
