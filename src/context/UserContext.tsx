@@ -2,12 +2,15 @@ import React, { createContext, useContext, useState, useEffect } from 'react';
 import { API_URL } from '../config';
 
 /**
- * 사용자 정보 인터페이스
+ * 사용자 정보 인터페이스 (v3.8 확장 필드 포함)
  */
 export interface User {
     id: string;
     username: string;
     name: string;
+    email?: string;
+    department?: string;
+    role: 'admin' | 'user';
     tier?: 'Baseline' | 'Performance' | 'Apex';
 }
 
@@ -18,6 +21,7 @@ interface UserContextType {
     login: (username: string, pw: string) => Promise<{ success: boolean; error?: string }>;
     logout: () => void;
     updateTier: (newTier: 'Baseline' | 'Performance' | 'Apex') => void;
+    updateLocalUser: (data: Partial<User>) => void; // [추가] 로컬 상태 갱신용
 }
 
 const UserContext = createContext<UserContextType | undefined>(undefined);
@@ -56,10 +60,8 @@ export const UserProvider: React.FC<{ children: React.ReactNode }> = ({ children
                 localStorage.setItem('repoinsight_tier', 'Apex');
                 return { success: true };
             }
-            // 서버에서 보낸 에러 메시지 활용
             return { success: false, error: data.error || '로그인에 실패했습니다.' };
         } catch (e) {
-            console.error('Login error:', e);
             return { success: false, error: '서버 연결에 실패했습니다.' };
         }
     };
@@ -76,10 +78,17 @@ export const UserProvider: React.FC<{ children: React.ReactNode }> = ({ children
         localStorage.setItem('repoinsight_tier', newTier);
     };
 
+    const updateLocalUser = (data: Partial<User>) => {
+        if (!user) return;
+        const updated = { ...user, ...data };
+        setUser(updated);
+        localStorage.setItem('repoinsight_user', JSON.stringify(updated));
+    };
+
     const isLoggedIn = !!user;
 
     return (
-        <UserContext.Provider value={{ user, isLoggedIn, tier, login, logout, updateTier }}>
+        <UserContext.Provider value={{ user, isLoggedIn, tier, login, logout, updateTier, updateLocalUser }}>
             {children}
         </UserContext.Provider>
     );

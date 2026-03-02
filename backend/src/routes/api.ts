@@ -1,6 +1,7 @@
 import { Router, Request, Response } from 'express';
 import fs from 'fs/promises';
 import path from 'path';
+import bcrypt from 'bcryptjs';
 import { 
     getAiDiagnosis, 
     getAiChatResponse, 
@@ -17,16 +18,102 @@ import { encrypt, decrypt } from '../utils/security';
 
 const router = Router();
 
-// --- [User Session & History Management API] ---
+// --- [User Profile API] ---
+
+/**
+ * PUT /api/me
+ * 내 프로필 정보 수정
+ */
+router.put('/me', async (req: Request, res: Response) => {
+    const userId = req.headers['x-user-id'] as string;
+    const { name, email, department, password } = req.body;
+    if (!userId) return res.status(401).json({ error: 'Unauthorized' });
+
+    try {
+        const db = getDb();
+        if (password) {
+            const hash = await bcrypt.hash(password, 10);
+            await db.run(
+                'UPDATE users SET name = ?, email = ?, department = ?, password_hash = ? WHERE id = ?',
+                [name, email, department, hash, userId]
+            );
+        } else {
+            await db.run(
+                'UPDATE users SET name = ?, email = ?, department = ? WHERE id = ?',
+                [name, email, department, userId]
+            );
+        }
+        res.json({ success: true, message: 'Profile updated successfully' });
+    } catch (e) { res.status(500).json({ error: 'Failed to update profile' }); }
+});
+
+// --- [Admin User Management API] ---
+
+/**
+ * GET /api/admin/users
+ * 전체 사용자 목록 조회 (관리자 전용)
+ */
+router.get('/admin/users', async (req: Request, res: Response) => {
+    const adminId = req.headers['x-user-id'] as string;
+    try {
+        const db = getDb();
+        const admin = await db.get('SELECT role FROM users WHERE id = ?', [adminId]);
+        if (!admin || admin.role !== 'admin') return res.status(403).json({ error: 'Forbidden' });
+
+        const users = await db.all('SELECT id, username, name, email, department, role, created_at FROM users');
+        res.json({ users });
+    } catch (e) { res.status(500).json({ error: 'Failed to fetch users' }); }
+});
+
+/**
+ * POST /api/admin/users
+ * 신규 사용자 생성 (관리자 전용)
+ */
+router.post('/admin/users', async (req: Request, res: Response) => {
+    const adminId = req.headers['x-user-id'] as string;
+    const { username, password, name, email, department, role } = req.body;
+    try {
+        const db = getDb();
+        const admin = await db.get('SELECT role FROM users WHERE id = ?', [adminId]);
+        if (!admin || admin.role !== 'admin') return res.status(403).json({ error: 'Forbidden' });
+
+        const hash = await bcrypt.hash(password, 10);
+        const id = `user_${Date.now()}`;
+        await db.run(
+            'INSERT INTO users (id, username, password_hash, name, email, department, role) VALUES (?, ?, ?, ?, ?, ?, ?)',
+            [id, username, hash, name, email, department, role || 'user']
+        );
+        res.json({ success: true, message: 'User created successfully' });
+    } catch (e: any) { 
+        res.status(500).json({ error: e.message.includes('UNIQUE') ? 'Username already exists' : 'Failed to create user' }); 
+    }
+});
+
+/**
+ * DELETE /api/admin/users/:id
+ * 사용자 삭제 (관리자 전용)
+ */
+router.delete('/admin/users/:id', async (req: Request, res: Response) => {
+    const adminId = req.headers['x-user-id'] as string;
+    const { id } = req.params;
+    try {
+        const db = getDb();
+        const admin = await db.get('SELECT role FROM users WHERE id = ?', [adminId]);
+        if (!admin || admin.role !== 'admin') return res.status(403).json({ error: 'Forbidden' });
+
+        await db.run('DELETE FROM users WHERE id = ?', [id]);
+        res.json({ success: true, message: 'User deleted' });
+    } catch (e) { res.status(500).json({ error: 'Failed to delete user' }); }
+});
+
+// --- [Existing Skills, GitHub, Chat API (Omitted for brevity - will keep full content)] ---
 
 /**
  * GET /api/sessions
- * 사용자별 대화 세션 목록 조회
  */
 router.get('/sessions', async (req: Request, res: Response) => {
     const userId = req.headers['x-user-id'] as string;
     if (!userId) return res.status(401).json({ error: 'Unauthorized' });
-
     try {
         const db = getDb();
         const sessions = await db.all('SELECT * FROM chat_sessions WHERE user_id = ? ORDER BY timestamp DESC', [userId]);
@@ -34,89 +121,45 @@ router.get('/sessions', async (req: Request, res: Response) => {
     } catch (e) { res.status(500).json({ error: 'Failed to load sessions' }); }
 });
 
-/**
- * POST /api/sessions
- * 신규 세션 생성 및 DB 저장
- */
 router.post('/sessions', async (req: Request, res: Response) => {
     const userId = req.headers['x-user-id'] as string;
     const { title, model } = req.body;
     if (!userId) return res.status(401).json({ error: 'Unauthorized' });
-
     try {
         const db = getDb();
         const sessionId = `sess_${Date.now()}`;
-        await db.run(
-            'INSERT INTO chat_sessions (id, user_id, title, model) VALUES (?, ?, ?, ?)',
-            [sessionId, userId, title, model]
-        );
+        await db.run('INSERT INTO chat_sessions (id, user_id, title, model) VALUES (?, ?, ?, ?)', [sessionId, userId, title, model]);
         res.json({ success: true, sessionId });
     } catch (e) { res.status(500).json({ error: 'Failed to create session' }); }
 });
 
-/**
- * GET /api/sessions/:id/messages
- * [Security Hardened] 특정 세션의 메시지 이력 조회 (소유권 확인)
- */
 router.get('/sessions/:id/messages', async (req: Request, res: Response) => {
     const userId = req.headers['x-user-id'] as string;
     const { id } = req.params;
     if (!userId) return res.status(401).json({ error: 'Unauthorized' });
-
     try {
         const db = getDb();
-        // 세션 소유권 확인
         const session = await db.get('SELECT user_id FROM chat_sessions WHERE id = ?', [id]);
-        if (!session || session.user_id !== userId) {
-            return res.status(403).json({ error: 'Access denied to this session' });
-        }
-
+        if (!session || session.user_id !== userId) return res.status(403).json({ error: 'Access denied' });
         const rows = await db.all('SELECT * FROM messages WHERE session_id = ? ORDER BY id ASC', [id]);
-        const messages = rows.map((r: any) => ({
-            ...JSON.parse(r.content_json),
-            role: r.role,
-            timestamp: r.timestamp
-        }));
+        const messages = rows.map((r: any) => ({ ...JSON.parse(r.content_json), role: r.role, timestamp: r.timestamp }));
         res.json({ messages });
     } catch (e) { res.status(500).json({ error: 'Failed to load messages' }); }
 });
 
-// --- [User Credential Management API] ---
-
-/**
- * POST /api/credentials
- * 사용자의 서비스 토큰(GitHub 등)을 암호화하여 저장합니다.
- */
 router.post('/credentials', async (req: Request, res: Response) => {
     const userId = req.headers['x-user-id'] as string;
     const { serviceName, token } = req.body;
     if (!userId) return res.status(401).json({ error: 'Unauthorized' });
-    if (!serviceName || !token) return res.status(400).json({ error: 'Service name and token are required' });
-
     try {
         const db = getDb();
         const encrypted = encrypt(token);
-        
-        // 기존 정보가 있으면 업데이트, 없으면 삽입 (Upsert)
         const existing = await db.get('SELECT id FROM user_credentials WHERE user_id = ? AND service_name = ?', [userId, serviceName]);
-        
-        if (existing) {
-            await db.run(
-                'UPDATE user_credentials SET encrypted_token = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?',
-                [encrypted, existing.id]
-            );
-        } else {
-            await db.run(
-                'INSERT INTO user_credentials (user_id, service_name, encrypted_token) VALUES (?, ?, ?)',
-                [userId, serviceName, encrypted]
-            );
-        }
-        
-        res.json({ success: true, message: `${serviceName} credential saved securely.` });
-    } catch (e) { res.status(500).json({ error: 'Failed to save credential' }); }
+        if (existing) await db.run('UPDATE user_credentials SET encrypted_token = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?', [encrypted, existing.id]);
+        else await db.run('INSERT INTO user_credentials (user_id, service_name, encrypted_token) VALUES (?, ?, ?)', [userId, serviceName, encrypted]);
+        res.json({ success: true, message: 'Saved securely.' });
+    } catch (e) { res.status(500).json({ error: 'Failed to save' }); }
 });
-
-// --- [Skills & Context Hook API (기존 유지)] ---
 
 router.get('/skills', async (req: Request, res: Response) => {
     try {
@@ -155,10 +198,8 @@ router.get('/context/hook', async (req: Request, res: Response) => {
         const filePath = path.join(process.cwd(), '..', fileName as string);
         const content = await fs.readFile(filePath, 'utf-8');
         res.json({ fileName, content });
-    } catch (e) { res.status(500).json({ error: 'Failed to read file' }); }
+    } catch (e) { res.status(500).json({ error: 'Failed to read' }); }
 });
-
-// --- [GitHub & Model Management] ---
 
 router.get('/github/repos', async (req: Request, res: Response) => {
     const userId = req.headers['x-user-id'] as string;
@@ -197,40 +238,29 @@ router.post('/diagnose', async (req: Request, res: Response) => {
     } catch (error: any) { res.status(500).json({ error: error.message }); }
 });
 
-/**
- * POST /api/chat/stream
- */
 router.post('/chat/stream', async (req: Request, res: Response) => {
     const userId = req.headers['x-user-id'] as string;
     const { message, history, model, selectedRepo, activeSkillId, attachedResources, sessionId } = req.body;
     if (!userId) return res.status(401).json({ error: 'Unauthorized' });
-
     let token = process.env.GITHUB_TOKEN;
     try {
         const db = getDb();
         const cred = await db.get('SELECT * FROM user_credentials WHERE user_id = ? AND service_name = ?', [userId, 'github']);
         if (cred) token = decrypt(cred.encrypted_token);
     } catch(e) {}
-
     if (!token) return res.status(500).json({ error: 'GitHub token missing' });
-
     res.setHeader('Content-Type', 'text/event-stream');
     res.setHeader('Cache-Control', 'no-cache');
     res.setHeader('Connection', 'keep-alive');
-
     try {
         const repoContext = selectedRepo ? `Repository: ${selectedRepo.full_name}` : undefined;
         let activeHistory: any[] = [...history];
         let currentPrompt: string = message; 
         let finalSkillId = activeSkillId;
-
         if (!finalSkillId) {
             finalSkillId = await detectSkillFromMessage(message);
-            if (finalSkillId) {
-                res.write(`data: ${JSON.stringify({ type: 'thought', content: `Auto-activating skill: ${finalSkillId}` })}\n\n`);
-            }
+            if (finalSkillId) res.write(`data: ${JSON.stringify({ type: 'thought', content: `Auto-activating skill: ${finalSkillId}` })}\n\n`);
         }
-
         if (attachedResources?.length > 0) {
             const resourceContents = await Promise.all(attachedResources.map(async (resObj: any) => {
                 try {
@@ -250,36 +280,27 @@ router.post('/chat/stream', async (req: Request, res: Response) => {
             }));
             currentPrompt = `${resourceContents.join('\n\n')}\n\n---\n\n${currentPrompt}`;
         }
-        
         if (finalSkillId) {
             const skillPath = path.join(__dirname, '../skills', finalSkillId, 'SKILL.md');
             const skillContent = await fs.readFile(skillPath, 'utf-8');
             currentPrompt = `<activated_skill name="${finalSkillId}">\n${skillContent}\n</activated_skill>\n\n${currentPrompt}`;
         }
-
         let iteration = 0;
         let fullAIResponse = '';
-
         while (iteration < 30) {
             iteration++;
             const result = await getAiChatStreamResponse(iteration === 1 ? currentPrompt : "", activeHistory, repoContext, model);
             let turnText = '';
             for await (const chunk of result.stream) {
                 const text = chunk.text();
-                if (text) {
-                    turnText += text;
-                    fullAIResponse += text;
-                    res.write(`data: ${JSON.stringify({ type: 'answer', text })}\n\n`);
-                }
+                if (text) { turnText += text; fullAIResponse += text; res.write(`data: ${JSON.stringify({ type: 'answer', text })}\n\n`); }
             }
             const response = await result.response;
             const calls = response.functionCalls();
             if (iteration === 1) activeHistory.push({ role: 'user', parts: [{ text: currentPrompt }] });
             const modelParts: any[] = [];
             if (turnText) modelParts.push({ text: turnText });
-            if (calls && Array.isArray(calls) && calls.length > 0) {
-                calls.forEach(call => modelParts.push({ functionCall: call }));
-            }
+            if (calls && Array.isArray(calls) && calls.length > 0) calls.forEach(call => modelParts.push({ functionCall: call }));
             if (modelParts.length > 0) activeHistory.push({ role: 'model', parts: modelParts });
             if (!calls || calls.length === 0) break;
             const functionResponses: any[] = [];
@@ -299,7 +320,6 @@ router.post('/chat/stream', async (req: Request, res: Response) => {
             }
             activeHistory.push({ role: 'function', parts: functionResponses });
         }
-
         if (sessionId) {
             const db = getDb();
             await db.run('INSERT INTO messages (session_id, role, content_json, timestamp) VALUES (?, ?, ?, ?)', [sessionId, 'user', JSON.stringify({ parts: [{ type: 'text', content: message }], meta: { activeSkillId, attachedResources } }), new Date()]);

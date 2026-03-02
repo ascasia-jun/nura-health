@@ -1,7 +1,6 @@
 import sqlite3 from 'sqlite3';
 import { open, Database } from 'sqlite';
 import path from 'path';
-import fs from 'fs/promises';
 
 /**
  * 데이터베이스 연결 객체
@@ -16,24 +15,31 @@ export async function initDatabase() {
 
     const dbPath = path.join(__dirname, '../../repoinsight.db');
     
-    // SQLite 연결
     db = await open({
         filename: dbPath,
         driver: sqlite3.Database
     });
 
-    // 1. users 테이블
+    // 1. users 테이블 (v3.8 확장 필드 포함)
     await db.exec(`
         CREATE TABLE IF NOT EXISTS users (
             id TEXT PRIMARY KEY,
             username TEXT UNIQUE NOT NULL,
             password_hash TEXT NOT NULL,
-            name TEXT,
+            name TEXT NOT NULL,
+            email TEXT,
+            department TEXT,
+            role TEXT DEFAULT 'user',
             created_at DATETIME DEFAULT CURRENT_TIMESTAMP
         )
     `);
 
-    // 2. user_credentials 테이블 (암호화된 API 키 저장)
+    // 기존 테이블에 필드가 없는 경우 추가 (Migration)
+    try { await db.exec('ALTER TABLE users ADD COLUMN email TEXT'); } catch (e) {}
+    try { await db.exec('ALTER TABLE users ADD COLUMN department TEXT'); } catch (e) {}
+    try { await db.exec('ALTER TABLE users ADD COLUMN role TEXT DEFAULT "user"'); } catch (e) {}
+
+    // 2. user_credentials 테이블
     await db.exec(`
         CREATE TABLE IF NOT EXISTS user_credentials (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -69,7 +75,7 @@ export async function initDatabase() {
         )
     `);
 
-    console.log('[Database] SQLite initialized and schema verified.');
+    console.log('[Database] SQLite initialized and schema migrated.');
     return db;
 }
 
@@ -82,22 +88,22 @@ export async function seedInitialData() {
     const bcrypt = require('bcryptjs');
     const admin = await db!.get('SELECT * FROM users WHERE username = ?', ['admin']);
     
-    const newHash = await bcrypt.hash('admin', 10); // 비밀번호를 'admin'으로 설정
+    const newHash = await bcrypt.hash('admin', 10);
 
     if (!admin) {
         await db!.run(
-            'INSERT INTO users (id, username, password_hash, name) VALUES (?, ?, ?, ?)',
-            ['user_admin', 'admin', newHash, 'Administrator']
+            'INSERT INTO users (id, username, password_hash, name, role, department) VALUES (?, ?, ?, ?, ?, ?)',
+            ['user_admin', 'admin', newHash, 'Administrator', 'admin', 'Management']
         );
         console.log('[Database] Seeded initial admin account (admin/admin).');
     } else {
-        // 이미 존재할 경우 비밀번호 최신화
-        await db!.run('UPDATE users SET password_hash = ? WHERE username = ?', [newHash, 'admin']);
-        console.log('[Database] Admin password updated to "admin".');
+        // 이미 존재할 경우 비밀번호 및 권한 최신화
+        await db!.run('UPDATE users SET password_hash = ?, role = ? WHERE username = ?', [newHash, 'admin', 'admin']);
+        console.log('[Database] Admin account synchronized.');
     }
 }
 
 export const getDb = () => {
-    if (!db) throw new Error('Database not initialized. Call initDatabase() first.');
+    if (!db) throw new Error('Database not initialized.');
     return db;
 };
