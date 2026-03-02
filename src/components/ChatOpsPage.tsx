@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect, useCallback, useMemo } from 'react';
-import { Send, Bot, LogOut, Sparkles, Code, Terminal, MessageSquare, Plus, Settings, RotateCcw, User, ChevronDown, Loader2, Github, X, FileText, Zap, Hash, ExternalLink, GitPullRequest, GitMerge, FileCode, Folder, ChevronRight, Search, Check, Eye } from 'lucide-react';
+import { Send, Bot, LogOut, Sparkles, Code, Terminal, MessageSquare, Plus, Settings, RotateCcw, User, ChevronDown, Loader2, Github, X, FileText, Zap, Hash, ExternalLink, GitPullRequest, GitMerge, FileCode, Folder, ChevronRight, Search, Check, Eye, Mail, Download } from 'lucide-react';
 import { useUser } from '../context/UserContext';
 import { API_URL } from '../config';
 import { SettingsModal } from './SettingsModal';
@@ -12,7 +12,7 @@ import { ContentPreviewModal } from './Chat/ContentPreviewModal';
 type SidebarTab = 'PR' | 'Push' | 'Code';
 
 export const ChatOpsPage: React.FC = () => {
-    const { logout } = useUser();
+    const { user, logout } = useUser();
     const [input, setInput] = useState('');
     const [sidebarSearch, setSidebarSearch] = useState('');
     const [isModelListOpen, setIsModelListOpen] = useState(false);
@@ -22,7 +22,6 @@ export const ChatOpsPage: React.FC = () => {
     const [isRightSidebarOpen, setIsRightSidebarOpen] = useState(true);
     const [activeTab, setActiveTab] = useState<SidebarTab>('PR');
     
-    // [v3.5] 미리보기 모달 상태
     const [isPreviewOpen, setIsPreviewOpen] = useState(false);
     const [previewContent, setPreviewContent] = useState('');
     const [previewTitle, setPreviewTitle] = useState('');
@@ -47,7 +46,7 @@ export const ChatOpsPage: React.FC = () => {
 
     const isCurrentSessionLoading = sessions.find(s => s.id === currentSessionId)?.isLoading || false;
 
-    // --- 데이터 로드 ---
+    // --- 데이터 로드 로직 ---
 
     const fetchRepositories = useCallback(async () => {
         setIsRepoLoading(true);
@@ -144,15 +143,37 @@ export const ChatOpsPage: React.FC = () => {
             let url = '';
             if (type === 'skill') url = `${API_URL}/api/skills/${id}/content`;
             else url = `${API_URL}/api/context/hook?fileName=${id}`;
-            
             const res = await fetch(url);
             const data = await res.json();
             setPreviewContent(data.content || '내용이 없습니다.');
-        } catch (e) {
-            setPreviewContent('콘텐츠를 불러오는 중 오류가 발생했습니다.');
-        } finally {
-            setIsPreviewLoading(false);
-        }
+        } catch (e) { setPreviewContent('콘텐츠를 불러오는 중 오류가 발생했습니다.'); } finally { setIsPreviewLoading(false); }
+    };
+
+    // [v3.5] 분석 결과 내보내기 핸들러
+    const handleExportWord = (content: string) => {
+        const repoName = selectedRepo?.name || 'RepoInsight';
+        const date = new Date().toLocaleDateString();
+        const fullContent = `# RepoInsight Analysis Report\n\n- **Project**: ${repoName}\n- **Date**: ${date}\n\n---\n\n${content}`;
+        
+        // 브라우저 단에서 Word 형식으로 인식하게 하는 최소한의 HTML 래핑
+        const html = `
+            <html xmlns:o='urn:schemas-microsoft-com:office:office' xmlns:w='urn:schemas-microsoft-com:office:word' xmlns='http://www.w3.org/TR/REC-html40'>
+            <head><meta charset='utf-8'></head><body>${fullContent.replace(/\n/g, '<br>')}</body></html>
+        `;
+        const blob = new Blob(['\ufeff', html], { type: 'application/msword' });
+        const url = URL.createObjectURL(blob);
+        const link = document.createElement('a');
+        link.href = url;
+        link.download = `RepoInsight_Report_${repoName}_${date}.doc`;
+        link.click();
+        URL.revokeObjectURL(url);
+    };
+
+    const handleSendEmail = (content: string) => {
+        const repoName = selectedRepo?.name || 'Repository';
+        const subject = encodeURIComponent(`[RepoInsight] Analysis Report for ${repoName}`);
+        const body = encodeURIComponent(`Hello,\n\nHere is the analysis report for project ${repoName}.\n\n---\n\n${content}`);
+        window.location.href = `mailto:?subject=${subject}&body=${body}`;
     };
 
     const resetAllSelections = () => { setActiveSkillId(null); };
@@ -248,6 +269,7 @@ export const ChatOpsPage: React.FC = () => {
                                                     </div>
                                                 </div>
                                             )}
+
                                             {msg.parts?.map((part, pIdx) => {
                                                 if (part.type === 'thought') {
                                                     const isProcessNode = part.content.startsWith('Completed:') || part.content.startsWith('Executing');
@@ -256,15 +278,43 @@ export const ChatOpsPage: React.FC = () => {
                                                 }
                                                 const isLastMsg = idx === messages.length - 1;
                                                 const isActualLastPart = isLastMsg && pIdx === actualLastTextPartIdx;
+                                                
                                                 return (
-                                                    <div key={pIdx} className={`p-5 md:p-8 text-sm md:text-base leading-relaxed shadow-xl bg-slate-900/40 text-slate-200 border border-white/10 rounded-2xl rounded-tl-none backdrop-blur-sm`}>
-                                                        <MarkdownRenderer content={part.content} collapsible={!isActualLastPart} defaultCollapsed={!isActualLastPart && isDone} />
+                                                    <div key={pIdx} className="relative group/msg">
+                                                        <div className={`p-5 md:p-8 text-sm md:text-base leading-relaxed shadow-xl bg-slate-900/40 text-slate-200 border border-white/10 rounded-2xl rounded-tl-none backdrop-blur-sm`}>
+                                                            <MarkdownRenderer 
+                                                                content={part.content} 
+                                                                collapsible={!isActualLastPart} 
+                                                                defaultCollapsed={!isActualLastPart && isDone} 
+                                                            />
+                                                            
+                                                            {/* [v3.5] 최종 리포트 내보내기 액션 (텍스트 파트 하단) */}
+                                                            {isDone && isActualLastPart && (
+                                                                <div className="flex justify-end gap-3 mt-8 pt-6 border-t border-white/5">
+                                                                    <button 
+                                                                        onClick={() => handleExportWord(part.content)}
+                                                                        className="flex items-center gap-2 px-3 py-1.5 bg-white/5 hover:bg-white/10 border border-white/10 rounded-lg text-[10px] font-black text-slate-400 hover:text-cyan-400 transition-all uppercase tracking-tighter"
+                                                                        title="Word로 내보내기"
+                                                                    >
+                                                                        <FileText size={14} /> Export Word
+                                                                    </button>
+                                                                    <button 
+                                                                        onClick={() => handleSendEmail(part.content)}
+                                                                        className="flex items-center gap-2 px-3 py-1.5 bg-white/5 hover:bg-white/10 border border-white/10 rounded-lg text-[10px] font-black text-slate-400 hover:text-amber-400 transition-all uppercase tracking-tighter"
+                                                                        title="이메일로 보내기"
+                                                                    >
+                                                                        <Mail size={14} /> Send Email
+                                                                    </button>
+                                                                </div>
+                                                            )}
+                                                        </div>
                                                     </div>
                                                 );
                                             })}
                                         </div>
                                     )}
                                 </div>
+                                
                                 {msg.role === 'user' && (
                                     <div className="w-10 h-10 rounded-xl bg-white/5 text-slate-400 flex items-center justify-center shrink-0 mt-1 border border-white/10 shadow-lg"><User size={20} /></div>
                                 )}
@@ -279,7 +329,6 @@ export const ChatOpsPage: React.FC = () => {
                 <div className="p-6 md:p-10 bg-slate-900/60 backdrop-blur-3xl border-t border-white/5 space-y-4">
                     <div className="max-w-4xl mx-auto flex flex-col gap-4 px-2">
                         <div className="flex items-center gap-3">
-                            {/* Skill Dropdown */}
                             <div className="relative">
                                 <button onClick={() => { setIsSkillListOpen(!isSkillListOpen); setIsHookListOpen(false); }} className={`flex items-center gap-1.5 px-4 py-2 border rounded-xl text-[11px] font-black transition-all uppercase tracking-widest ${activeSkillId ? 'bg-amber-500/20 border-amber-500/40 text-amber-400 shadow-[0_0_15px_rgba(245,158,11,0.2)]' : 'bg-white/5 border-white/10 text-slate-400 hover:text-amber-400'}`}>
                                     <Zap size={14} fill={activeSkillId ? 'currentColor' : 'none'} /> {activeSkillId ? `Skill: ${getSkillName(activeSkillId)}` : 'Select Skill'}
@@ -311,7 +360,6 @@ export const ChatOpsPage: React.FC = () => {
                                 )}
                             </div>
 
-                            {/* Hook Dropdown */}
                             <div className="relative">
                                 <button onClick={() => { setIsHookListOpen(!isHookListOpen); setIsSkillListOpen(false); }} className={`flex items-center gap-1.5 px-4 py-2 border rounded-xl text-[11px] font-black transition-all uppercase tracking-widest ${selectedHooks?.length > 0 ? 'bg-cyan-500/20 border-cyan-500/40 text-cyan-400 shadow-[0_0_15px_rgba(6,182,212,0.2)]' : 'bg-white/5 border-white/10 text-slate-400 hover:text-cyan-400'}`}>
                                     <Hash size={14} /> Context Hooks {selectedHooks?.length > 0 && `(${selectedHooks.length})`}
@@ -387,17 +435,9 @@ export const ChatOpsPage: React.FC = () => {
             </main>
 
             <SettingsModal isOpen={isSettingsOpen} onClose={() => setIsSettingsOpen(false)} currentModel={currentModel} />
-            
-            {/* [v3.5] 미리보기 모달 */}
-            <ContentPreviewModal 
-                isOpen={isPreviewOpen} 
-                onClose={() => setIsPreviewOpen(false)} 
-                title={previewTitle} 
-                content={previewContent} 
-                isLoading={isPreviewLoading}
-            />
+            <ContentPreviewModal isOpen={isPreviewOpen} onClose={() => setIsPreviewOpen(false)} title={previewTitle} content={previewContent} isLoading={isPreviewLoading} />
 
-            {/* 오른쪽 사이드바 */}
+            {/* 오른쪽 사이드바 (기존 유지) */}
             {isRightSidebarOpen && (
                 <aside className="w-80 bg-slate-900/50 border-l border-white/5 flex flex-col backdrop-blur-xl animate-in slide-in-from-right duration-300">
                     <div className="p-6 border-b border-white/5">
