@@ -22,7 +22,7 @@ app.use(helmet({
 app.use(cors({
   origin: true,
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
-  allowedHeaders: ['Content-Type', 'Authorization'],
+  allowedHeaders: ['Content-Type', 'Authorization', 'x-user-id'], // x-user-id 추가
   credentials: true,
   optionsSuccessStatus: 200
 }));
