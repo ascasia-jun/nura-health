@@ -20,7 +20,7 @@ const getGenAI = () => {
 const genAI = getGenAI();
 
 // 현재 선택된 모델 (목록 조회 후 동적으로 결정됨)
-let currentModelName = "gemini-1.5-flash"; 
+let currentModelName = "gemini-2.5-flash"; 
 
 interface AIModel {
     name: string;
@@ -32,11 +32,11 @@ interface AIModel {
  * 가용한 모델 목록 중 최적의 모델을 선택합니다.
  */
 const selectBestModel = (models: AIModel[]): string => {
-    const priorities = ["gemini-2.0-flash", "gemini-1.5-pro", "gemini-1.5-flash"];
+    const priorities = ["gemini-2.5-flash", "gemini-2.0-flash", "gemini-1.5-pro", "gemini-1.5-flash"];
     for (const priority of priorities) {
         if (models.some((m: AIModel) => m.name === priority)) return priority;
     }
-    return models.length > 0 ? models[0].name : "gemini-1.5-flash";
+    return models.length > 0 ? models[0].name : "gemini-2.5-flash";
 };
 
 export const getCurrentModel = () => currentModelName;

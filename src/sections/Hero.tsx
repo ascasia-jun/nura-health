@@ -1,8 +1,9 @@
 import React, { useEffect, useRef } from 'react';
 import gsap from 'gsap';
 import { Sparkles, Terminal, Shield, Zap, TrendingUp, AlertTriangle } from 'lucide-react';
+import { useUser } from '../context/UserContext';
 
-export const Hero: React.FC = () => {
+export const Hero: React.FC<{ onStartClick: () => void }> = ({ onStartClick }) => {
     const heroRef = useRef<HTMLDivElement>(null);
     const titleRef = useRef<HTMLHeadingElement>(null);
     const badgeRef = useRef<HTMLDivElement>(null);
@@ -54,7 +55,7 @@ export const Hero: React.FC = () => {
 
                 <h1 ref={titleRef} className="text-5xl md:text-8xl font-black mb-8 tracking-tighter leading-none">
                     <span className="block text-white">RETAINS CODE</span>
-                    <span className="block bg-gradient-to-r from-cyan-400 via-indigo-400 to-cyan-400 bg-clip-text text-transparent bg-[length:200%_auto] animate-gradient-x">REPOINSIGHT</span>
+                    <span className="block bg-gradient-to-r from-cyan-400 via-indigo-400 to-cyan-400 bg-clip-text text-transparent bg-[length:200%_auto] animate-gradient-x text-shadow-glow">REPOINSIGHT</span>
                 </h1>
 
                 <p className="max-w-3xl mx-auto text-lg md:text-xl text-slate-400 mb-12 leading-relaxed font-light">
@@ -63,12 +64,14 @@ export const Hero: React.FC = () => {
                 </p>
 
                 <div className="flex flex-wrap justify-center gap-4 mb-20">
-                    <a href="#chatops" className="px-8 py-4 bg-cyan-500 text-slate-950 rounded-2xl font-bold text-lg hover:bg-white hover:scale-105 active:scale-95 transition-all shadow-[0_0_30px_rgba(6,182,212,0.3)]">
-                        Launch ChatOps
-                    </a>
-                    <a href="#features" className="px-8 py-4 bg-white/5 text-white border border-white/10 rounded-2xl font-bold text-lg hover:bg-white/10 transition-all backdrop-blur-sm">
-                        Explore Intelligence
-                    </a>
+                    <button 
+                        onClick={onStartClick}
+                        className="group relative px-10 py-5 bg-cyan-500 text-slate-950 rounded-2xl font-black text-xl hover:bg-white hover:scale-105 active:scale-95 transition-all shadow-[0_0_40px_rgba(6,182,212,0.4)] flex items-center gap-3 overflow-hidden"
+                    >
+                        <div className="absolute inset-0 bg-gradient-to-r from-transparent via-white/20 to-transparent -translate-x-full group-hover:animate-shimmer" />
+                        <span>Get Started with RepoInsight</span>
+                        <Zap size={20} fill="currentColor" />
+                    </button>
                 </div>
 
                 {/* Core Diagnostic Metrics */}
