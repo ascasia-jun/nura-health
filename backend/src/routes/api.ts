@@ -19,6 +19,7 @@ import { encrypt, decrypt } from '../utils/security';
 
 const router = Router();
 
+// --- [Utility: Get User Token] ---
 const getUserCredential = async (userId: string, serviceName: string) => {
     try {
         const db = getDb();
@@ -53,14 +54,17 @@ router.get('/credentials', async (req: Request, res: Response) => {
     try {
         const db = getDb();
         const creds = await db.all('SELECT service_name, updated_at FROM user_credentials WHERE user_id = ?', [userId]);
-        const status = { github: creds.some(c => c.service_name === 'github'), gemini: creds.some(c => c.service_name === 'gemini') };
+        const status = {
+            github: creds.some(c => c.service_name === 'github'),
+            gemini: creds.some(c => c.service_name === 'gemini')
+        };
         res.json({ status, creds });
     } catch (e) { res.status(500).json({ error: 'Failed' }); }
 });
 
 /**
  * POST /api/credentials
- * [v3.8 Refinement] 상세 에러 메시지 제공 및 저장 로직 안정화
+ * [v3.8 Refinement] 키 등록과 설정 변경 로직 분리 지원
  */
 router.post('/credentials', async (req: Request, res: Response) => {
     const userId = req.headers['x-user-id'] as string;
@@ -70,28 +74,19 @@ router.post('/credentials', async (req: Request, res: Response) => {
     try {
         const db = getDb();
         
-        // 1. Gemini 검증 (상세 에러 포함)
-        if (serviceName === 'gemini' && token) {
-            const verification = await validateGeminiKey(token);
-            if (!verification.isValid) {
-                return res.status(400).json({ error: verification.error || '유효하지 않은 Gemini 키입니다.' });
-            }
-        }
-
-        // 2. 선호 모델 업데이트
+        // 1. 선호 모델 업데이트 (있을 경우에만)
         if (serviceName === 'gemini' && preferred_model) {
             await db.run('UPDATE users SET preferred_model = ? WHERE id = ?', [preferred_model, userId]);
         }
-        
-        // 3. 암호화 및 저장
-        if (token) {
-            let encrypted = '';
-            try {
-                encrypted = encrypt(token);
-            } catch (encErr) {
-                return res.status(500).json({ error: '데이터 암호화 중 내부 오류가 발생했습니다.' });
+
+        // 2. 키 등록/수정 (token이 있을 경우에만)
+        if (token && token.trim() !== "") {
+            if (serviceName === 'gemini') {
+                const verification = await validateGeminiKey(token);
+                if (!verification.isValid) return res.status(400).json({ error: verification.error || 'Invalid API Key' });
             }
 
+            const encrypted = encrypt(token);
             const existing = await db.get('SELECT id FROM user_credentials WHERE user_id = ? AND service_name = ?', [userId, serviceName]);
             if (existing) {
                 await db.run('UPDATE user_credentials SET encrypted_token = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?', [encrypted, existing.id]);
@@ -100,11 +95,27 @@ router.post('/credentials', async (req: Request, res: Response) => {
             }
         }
         
-        res.json({ success: true, message: 'Settings saved successfully.' });
+        res.json({ success: true, message: 'Settings saved.' });
     } catch (error: any) { 
         console.error('[API] Credentials error:', error.message);
-        res.status(500).json({ error: `저장 중 오류 발생: ${error.message}` }); 
+        res.status(500).json({ error: 'Failed to save settings' }); 
     }
+});
+
+/**
+ * DELETE /api/credentials/:serviceName
+ * [v3.8] 크리덴셜 연동 해제
+ */
+router.delete('/credentials/:serviceName', async (req: Request, res: Response) => {
+    const userId = req.headers['x-user-id'] as string;
+    const { serviceName } = req.params;
+    if (!userId) return res.status(401).json({ error: 'Unauthorized' });
+
+    try {
+        const db = getDb();
+        await db.run('DELETE FROM user_credentials WHERE user_id = ? AND service_name = ?', [userId, serviceName]);
+        res.json({ success: true, message: `${serviceName} unlinked.` });
+    } catch (e) { res.status(500).json({ error: 'Failed to unlink' }); }
 });
 
 // --- [User Session & History API] ---
@@ -164,6 +175,16 @@ router.post('/github/public-repos', async (req: Request, res: Response) => {
         await db.run('INSERT INTO user_public_repos (user_id, repo_full_name) VALUES (?, ?)', [userId, repoUrl]);
         res.json({ success: true });
     } catch (e: any) { res.status(500).json({ error: 'Failed' }); }
+});
+
+router.delete('/github/public-repos/:owner/:repo', async (req: Request, res: Response) => {
+    const userId = req.headers['x-user-id'] as string;
+    const fullName = `${req.params.owner}/${req.params.repo}`;
+    try {
+        const db = getDb();
+        await db.run('DELETE FROM user_public_repos WHERE user_id = ? AND repo_full_name = ?', [userId, fullName]);
+        res.json({ success: true });
+    } catch (e) { res.status(500).json({ error: 'Failed' }); }
 });
 
 router.get('/github/repos', async (req: Request, res: Response) => {

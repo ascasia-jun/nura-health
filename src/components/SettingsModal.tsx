@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { X, User, Shield, Key, Loader2, Save, Trash2, Plus, Building, Mail, Check, AlertCircle, Edit2, Github, LogOut, ExternalLink, Globe, Cpu, Database, Zap, Hash } from 'lucide-react';
+import { X, User, Shield, Key, Loader2, Save, Trash2, Plus, Building, Mail, Check, AlertCircle, Edit2, Github, LogOut, ExternalLink, Globe, Cpu, Database, Zap, Hash, Link as LinkIcon, Unlink } from 'lucide-react';
 import { useUser } from '../context/UserContext';
 import { API_URL } from '../config';
 
@@ -25,14 +25,7 @@ const UserEditModal: React.FC<{
     availableModels: any[];
 }> = ({ isOpen, onClose, onSuccess, mode, userData, currentUserId, availableModels }) => {
     const [formData, setFormData] = useState({
-        username: '',
-        password: '',
-        confirmPassword: '',
-        name: '',
-        email: '',
-        department: '',
-        role: 'user',
-        preferred_model: 'gemini-2.0-flash'
+        username: '', password: '', confirmPassword: '', name: '', email: '', department: '', role: 'user', preferred_model: 'gemini-2.0-flash'
     });
     const [isLoading, setIsLoading] = useState(false);
     const [error, setError] = useState('');
@@ -40,14 +33,9 @@ const UserEditModal: React.FC<{
     useEffect(() => {
         if (mode === 'edit' && userData) {
             setFormData({
-                username: userData.username || '',
-                password: '',
-                confirmPassword: '',
-                name: userData.name || '',
-                email: userData.email || '',
-                department: userData.department || '',
-                role: userData.role || 'user',
-                preferred_model: userData.preferred_model || 'gemini-2.0-flash'
+                username: userData.username || '', password: '', confirmPassword: '',
+                name: userData.name || '', email: userData.email || '', department: userData.department || '',
+                role: userData.role || 'user', preferred_model: userData.preferred_model || 'gemini-2.0-flash'
             });
         } else {
             setFormData({ username: '', password: '', confirmPassword: '', name: '', email: '', department: '', role: 'user', preferred_model: 'gemini-2.0-flash' });
@@ -98,16 +86,13 @@ const UserEditModal: React.FC<{
                         <div className="space-y-1.5"><label className="text-[10px] font-black text-slate-500 uppercase tracking-widest ml-1">Department</label><input type="text" value={formData.department} onChange={(e) => setFormData({...formData, department: e.target.value})} className="w-full bg-black/40 border border-white/10 rounded-xl px-4 py-2.5 text-white text-sm focus:border-cyan-500 outline-none" placeholder="부서명" /><p className="text-[9px] text-slate-600 px-1">소속된 팀 또는 조직 정보를 입력하세요.</p></div>
                     </div>
                     <div className="space-y-1.5"><label className="text-[10px] font-black text-slate-500 uppercase tracking-widest ml-1">Email Address*</label><input type="email" value={formData.email} onChange={(e) => setFormData({...formData, email: e.target.value})} className="w-full bg-black/40 border border-white/10 rounded-xl px-4 py-2.5 text-white text-sm focus:border-cyan-500 outline-none" placeholder="name@company.com" /><p className="text-[9px] text-slate-600 px-1">알림 및 연락을 위한 공식 이메일입니다.</p></div>
-                    
                     <div className="grid grid-cols-2 gap-6">
                         <div className="space-y-1.5"><label className="text-[10px] font-black text-slate-500 uppercase tracking-widest ml-1">{mode === 'edit' ? 'Change PW (Opt)' : 'Password*'}</label><input type="password" value={formData.password} onChange={(e) => setFormData({...formData, password: e.target.value})} className="w-full bg-black/40 border border-white/10 rounded-xl px-4 py-2.5 text-white text-sm outline-none" /></div>
-                        <div className="space-y-1.5"><label className="text-[10px] font-black text-slate-500 uppercase tracking-widest ml-1">Confirm PW</label><input type="password" value={formData.confirmPassword} onChange={(e) => setConfirmPw(e.target.value)} className={`w-full bg-black/40 border rounded-xl px-4 py-2.5 text-white text-sm outline-none ${formData.confirmPassword && !isPasswordMatched ? 'border-red-500/50' : 'border-white/10'}`} /></div>
+                        <div className="space-y-1.5"><label className="text-[10px] font-black text-slate-500 uppercase tracking-widest ml-1">Confirm PW</label><input type="password" value={formData.confirmPassword} onChange={(e) => setFormData({...formData, confirmPassword: e.target.value})} className={`w-full bg-black/40 border rounded-xl px-4 py-2.5 text-white text-sm outline-none ${formData.confirmPassword && !isPasswordMatched ? 'border-red-500/50' : 'border-white/10'}`} /></div>
                     </div>
-
                     <div className="space-y-1.5"><label className="text-[10px] font-black text-slate-500 uppercase tracking-widest ml-1">Preferred AI Model</label><select value={formData.preferred_model} onChange={(e) => setFormData({...formData, preferred_model: e.target.value})} className="w-full bg-black/40 border border-white/10 rounded-xl px-4 py-2.5 text-white text-sm outline-none">
                         {availableModels.map(m => <option key={m.name} value={m.name}>{m.name}</option>)}
                     </select><p className="text-[9px] text-slate-600 px-1">로그인 시 이 사용자에게 자동으로 적용될 기본 AI 엔진입니다.</p></div>
-
                     {error && <div className="p-3 bg-red-500/10 border border-red-500/20 rounded-xl text-red-400 text-xs font-bold flex items-center gap-2"><AlertCircle size={14} /> {error}</div>}
                     <div className="pt-4 flex gap-3">
                         <button type="button" onClick={onClose} className="flex-1 px-4 py-3 bg-white/5 hover:bg-white/10 text-white rounded-2xl text-xs font-black uppercase transition-all">Cancel</button>
@@ -135,7 +120,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose, c
     const [credStatus, setCredStatus] = useState<any>({ github: false, gemini: false });
     const [ghToken, setGhToken] = useState('');
     const [geminiKey, setGeminiKey] = useState('');
-    const [preferredModel, setPreferredModel] = useState(''); // [v3.8] 개별 상태로 관리
+    const [preferredModel, setPreferredModel] = useState('');
     const [isVerifying, setIsVerifying] = useState(false);
     const [publicRepoUrl, setPublicRepoUrl] = useState('');
     const [publicRepos, setPublicRepos] = useState<string[]>([]);
@@ -150,10 +135,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose, c
 
     useEffect(() => {
         if (isOpen && user) {
-            setProfileForm({ 
-                name: user.name || '', email: user.email || '', dept: user.department || '', 
-                newPw: '', confirmPw: '' 
-            });
+            setProfileForm({ name: user.name || '', email: user.email || '', dept: user.department || '', newPw: '', confirmPw: '' });
             setPreferredModel(user.preferred_model || 'gemini-2.0-flash');
             fetchCredentials();
             fetchPublicRepos();
@@ -197,54 +179,65 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose, c
 
     const handleUpdateProfile = async (e: React.FormEvent) => {
         e.preventDefault();
-        if (profileForm.newPw && profileForm.newPw !== profileForm.confirmPw) { setStatusMsg({ type: 'error', text: '비밀번호 확인이 일치하지 않습니다.' }); return; }
+        if (profileForm.newPw && profileForm.newPw !== profileForm.confirmPw) { setStatusMsg({ type: 'error', text: '비밀번호 확인 불일치.' }); return; }
         setIsLoading(true);
-        setStatusMsg({ type: '', text: '' });
         try {
             const res = await fetch(`${API_URL}/api/me`, {
                 method: 'PUT',
                 headers: { 'Content-Type': 'application/json', 'x-user-id': user?.id || '' },
-                body: JSON.stringify({ 
-                    name: profileForm.name, 
-                    email: profileForm.email, 
-                    department: profileForm.dept, // [v3.8 Fix] department로 매핑
-                    password: profileForm.newPw || undefined 
-                })
+                body: JSON.stringify({ name: profileForm.name, email: profileForm.email, department: profileForm.dept, password: profileForm.newPw || undefined })
             });
             if (res.ok) {
-                setStatusMsg({ type: 'success', text: '프로필 정보가 저장되었습니다.' });
+                setStatusMsg({ type: 'success', text: '프로필 저장됨.' });
                 updateLocalUser({ name: profileForm.name, email: profileForm.email, department: profileForm.dept });
-            } else {
-                const data = await res.json();
-                setStatusMsg({ type: 'error', text: data.error || '저장 실패' });
             }
-        } catch (e) { setStatusMsg({ type: 'error', text: '서버 통신 오류' }); } finally { setIsLoading(false); }
+        } catch (e) { setStatusMsg({ type: 'error', text: '통신 오류' }); } finally { setIsLoading(false); }
     };
 
-    const handleSaveCred = async (serviceName: string, token: string) => {
-        if (!token && serviceName !== 'gemini') return;
+    const handleSaveCred = async (serviceName: string, token: string | null, isModelOnly = false) => {
         setIsLoading(true);
-        if (serviceName === 'gemini') setIsVerifying(true);
+        if (serviceName === 'gemini' && !isModelOnly) setIsVerifying(true);
+        setStatusMsg({ type: '', text: '' });
         try {
             const res = await fetch(`${API_URL}/api/credentials`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json', 'x-user-id': user?.id || '' },
                 body: JSON.stringify({ 
                     serviceName, 
-                    token, 
+                    token: token || undefined, 
                     preferred_model: serviceName === 'gemini' ? preferredModel : undefined 
                 })
             });
+            const data = await res.json();
             if (res.ok) {
-                setStatusMsg({ type: 'success', text: `${serviceName.toUpperCase()} 설정이 저장되었습니다.` });
-                if (serviceName === 'github') setGhToken(''); else setGeminiKey('');
+                setStatusMsg({ type: 'success', text: isModelOnly ? '선호 모델이 저장되었습니다.' : `${serviceName.toUpperCase()} 연동 성공.` });
+                if (serviceName === 'github') setGhToken(''); else if (!isModelOnly) setGeminiKey('');
                 fetchCredentials();
                 if (serviceName === 'gemini') {
                     updateLocalUser({ preferred_model: preferredModel });
                     await refreshModels();
                 }
-            } else { const data = await res.json(); setStatusMsg({ type: 'error', text: data.error || '저장 실패' }); }
-        } catch (e) { setStatusMsg({ type: 'error', text: '통신 오류' }); } finally { setIsLoading(false); setIsVerifying(false); }
+            } else { setStatusMsg({ type: 'error', text: data.error || '저장 실패' }); }
+        } catch (e) { setStatusMsg({ type: 'error', text: '서버 통신 오류' }); } finally { setIsLoading(false); setIsVerifying(false); }
+    };
+
+    const handleUnlink = async (serviceName: string) => {
+        if (!window.confirm(`${serviceName.toUpperCase()} 연동을 해제하시겠습니까?`)) return;
+        setIsLoading(true);
+        try {
+            const res = await fetch(`${API_URL}/api/credentials/${serviceName}`, {
+                method: 'DELETE',
+                headers: { 'x-user-id': user?.id || '' }
+            });
+            if (res.ok) {
+                setStatusMsg({ type: 'success', text: '연동이 해제되었습니다.' });
+                fetchCredentials();
+                if (serviceName === 'gemini') {
+                    setModels([]);
+                    await refreshModels();
+                }
+            }
+        } catch (e) { setStatusMsg({ type: 'error', text: '해제 실패' }); } finally { setIsLoading(false); }
     };
 
     const handleAddPublicRepo = async () => {
@@ -257,7 +250,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose, c
     };
 
     const handleDeleteUser = async (targetId: string) => {
-        if (!window.confirm('정말 이 사용자를 삭제하시겠습니까?')) return;
+        if (!window.confirm('사용자를 삭제하시겠습니까?')) return;
         try {
             const res = await fetch(`${API_URL}/api/admin/users/${targetId}`, { method: 'DELETE', headers: { 'x-user-id': user?.id || '' } });
             if (res.ok) fetchUsers();
@@ -285,18 +278,17 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose, c
 
                 <div className="flex-1 flex flex-col overflow-hidden bg-slate-900/50 relative">
                     <div className="flex-1 overflow-y-auto p-12 custom-scrollbar">
-                        
                         {activeTab === 'Profile' && (
                             <form onSubmit={handleUpdateProfile} className="max-w-xl space-y-10 animate-in slide-in-from-right-4 duration-300">
                                 <div><h3 className="text-3xl font-black text-white mb-2 uppercase italic tracking-tighter">My Identity</h3><p className="text-sm text-slate-500 font-light">당신의 개인 프로필과 접속 권한을 최신화하세요.</p></div>
                                 <div className="space-y-6">
                                     <div className="grid grid-cols-2 gap-6">
-                                        <div className="space-y-1.5"><label className="text-[10px] font-black text-slate-500 uppercase tracking-widest ml-1">Account ID*</label><input type="text" value={user?.username} disabled className="w-full bg-black/30 border border-white/5 rounded-2xl px-5 py-4 text-slate-500 font-mono text-sm cursor-not-allowed" /><p className="text-[9px] text-slate-600 px-1">아이디는 변경할 수 없습니다.</p></div>
-                                        <div className="space-y-1.5"><label className="text-[10px] font-black text-slate-500 uppercase tracking-widest ml-1">Full Name*</label><input type="text" value={profileForm.name} onChange={(e) => setProfileForm({...profileForm, name: e.target.value})} className="w-full bg-white/5 border border-white/10 rounded-2xl px-5 py-4 text-white text-sm focus:border-cyan-500 transition-all outline-none" /><p className="text-[9px] text-slate-600 px-1">서비스 내에서 표시될 실명을 입력하세요.</p></div>
+                                        <div className="space-y-1.5"><label className="text-[10px] font-black text-slate-500 uppercase tracking-widest ml-1">Account ID*</label><input type="text" value={user?.username} disabled className="w-full bg-black/30 border border-white/5 rounded-2xl px-5 py-4 text-slate-500 font-mono text-sm" /></div>
+                                        <div className="space-y-1.5"><label className="text-[10px] font-black text-slate-500 uppercase tracking-widest ml-1">Full Name*</label><input type="text" value={profileForm.name} onChange={(e) => setProfileForm({...profileForm, name: e.target.value})} className="w-full bg-white/5 border border-white/10 rounded-2xl px-5 py-4 text-white text-sm focus:border-cyan-500 transition-all outline-none" /></div>
                                     </div>
                                     <div className="grid grid-cols-2 gap-6">
-                                        <div className="space-y-1.5"><label className="text-[10px] font-black text-slate-500 uppercase tracking-widest ml-1">Email*</label><input type="email" value={profileForm.email} onChange={(e) => setProfileForm({...profileForm, email: e.target.value})} className="w-full bg-white/5 border border-white/10 rounded-2xl px-5 py-4 text-white text-sm focus:border-cyan-500 transition-all outline-none" /><p className="text-[9px] text-slate-600 px-1">연락 가능한 업무용 이메일 주소입니다.</p></div>
-                                        <div className="space-y-1.5"><label className="text-[10px] font-black text-slate-500 uppercase tracking-widest ml-1">Department</label><input type="text" value={profileForm.dept} onChange={(e) => setProfileForm({...profileForm, dept: e.target.value})} className="w-full bg-white/5 border border-white/10 rounded-2xl px-5 py-4 text-white text-sm focus:border-cyan-500 transition-all outline-none" /><p className="text-[9px] text-slate-600 px-1">소속된 팀 또는 부서 정보입니다. (선택)</p></div>
+                                        <div className="space-y-1.5"><label className="text-[10px] font-black text-slate-500 uppercase tracking-widest ml-1">Email*</label><input type="email" value={profileForm.email} onChange={(e) => setProfileForm({...profileForm, email: e.target.value})} className="w-full bg-white/5 border border-white/10 rounded-2xl px-5 py-4 text-white text-sm focus:border-cyan-500 transition-all outline-none" /></div>
+                                        <div className="space-y-1.5"><label className="text-[10px] font-black text-slate-500 uppercase tracking-widest ml-1">Department</label><input type="text" value={profileForm.dept} onChange={(e) => setProfileForm({...profileForm, dept: e.target.value})} className="w-full bg-white/5 border border-white/10 rounded-2xl px-5 py-4 text-white text-sm focus:border-cyan-500 transition-all outline-none" /></div>
                                     </div>
                                     <div className="grid grid-cols-2 gap-6 pt-4 border-t border-white/5 mt-4">
                                         <div className="space-y-1.5"><label className="text-[10px] font-black text-slate-500 uppercase tracking-widest ml-1">New PW</label><input type="password" value={profileForm.newPw} onChange={(e) => setProfileForm({...profileForm, newPw: e.target.value})} className="w-full bg-white/5 border border-white/10 rounded-2xl px-5 py-4 text-white text-sm focus:border-cyan-500 transition-all outline-none" placeholder="비밀번호 변경 시 입력" /></div>
@@ -309,27 +301,59 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose, c
 
                         {activeTab === 'Credentials' && (
                             <div className="space-y-12 animate-in slide-in-from-right-4 duration-300">
-                                <div><h3 className="text-3xl font-black text-white mb-2 uppercase italic tracking-tighter">Credentials</h3><p className="text-sm text-slate-500 font-light">AI 엔진 및 개발 도구와의 지능형 연동 설계를 관리합니다.</p></div>
+                                <div><h3 className="text-3xl font-black text-white mb-2 uppercase italic tracking-tighter">Credentials</h3><p className="text-sm text-slate-500 font-light">AI 엔진 및 개발 플랫폼과의 연동 설계를 관리합니다.</p></div>
                                 <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                                    <div className="p-8 bg-gradient-to-br from-cyan-500/10 to-blue-500/10 border border-cyan-500/20 rounded-[2.5rem] flex flex-col gap-6 relative overflow-hidden group">
+                                    {/* Gemini Card */}
+                                    <div className="p-8 bg-gradient-to-br from-cyan-500/10 to-blue-500/10 border border-cyan-500/20 rounded-[2rem] flex flex-col gap-6 relative overflow-hidden group">
                                         <div className="flex justify-between items-start"><div className="p-4 bg-cyan-500/20 rounded-2xl text-cyan-400"><Cpu size={32} /></div><div className={`px-3 py-1 rounded-full text-[9px] font-black uppercase tracking-widest ${credStatus.gemini ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30' : 'bg-slate-500/20 text-slate-500 border border-white/10'}`}>{credStatus.gemini ? 'Connected' : 'Not Linked'}</div></div>
                                         <div><div className="text-xl font-black text-white italic">Google Gemini</div><div className="text-[10px] text-slate-500 uppercase font-black tracking-widest mt-1">AI Reasoning Engine</div></div>
-                                        <div className="space-y-4">
-                                            <div className="space-y-1.5"><label className="text-[9px] font-black text-slate-500 uppercase tracking-widest ml-1">API Key</label><input type="password" value={geminiKey} onChange={(e) => setGeminiKey(e.target.value)} placeholder="Enter API Key" className="w-full bg-black/40 border border-white/10 rounded-xl px-4 py-3 text-white text-xs font-mono outline-none focus:border-cyan-500 transition-all" /><a href="https://aistudio.google.com/app/apikey" target="_blank" rel="noreferrer" className="flex items-center gap-1.5 px-1 text-[9px] font-bold text-cyan-500 hover:text-white transition-colors uppercase tracking-tight"><ExternalLink size={10} /> Get API Key</a></div>
-                                            <div className="space-y-1.5"><label className="text-[9px] font-black text-slate-500 uppercase tracking-widest ml-1">Preferred Model</label><select value={preferredModel} onChange={(e) => setPreferredModel(e.target.value)} className="w-full bg-black/40 border border-white/10 rounded-xl px-4 py-3 text-white text-xs outline-none focus:border-cyan-500">{models.map(m => <option key={m.name} value={m.name}>{m.name}</option>)}</select></div>
-                                            <button onClick={() => handleSaveCred('gemini', geminiKey)} disabled={isLoading} className="w-full bg-white text-slate-950 font-black py-3 rounded-xl text-xs uppercase hover:bg-cyan-400 transition-all disabled:opacity-30 flex items-center justify-center gap-2">{isVerifying ? <Loader2 size={14} className="animate-spin" /> : null}{isVerifying ? 'Verifying...' : 'Sync Gemini Config'}</button>
+                                        
+                                        <div className="space-y-6">
+                                            {/* 1. API Key Section */}
+                                            <div className="space-y-2">
+                                                <label className="text-[9px] font-black text-slate-500 uppercase tracking-widest ml-1">API Connection</label>
+                                                <div className="flex gap-2">
+                                                    <input type="password" value={geminiKey} onChange={(e) => setGeminiKey(e.target.value)} placeholder={credStatus.gemini ? "********" : "Enter API Key"} className="flex-1 bg-black/40 border border-white/10 rounded-xl px-4 py-2.5 text-white text-xs font-mono outline-none focus:border-cyan-500 transition-all" />
+                                                    {credStatus.gemini ? (
+                                                        <button onClick={() => handleUnlink('gemini')} className="p-2.5 bg-red-500/20 text-red-400 border border-red-500/30 rounded-xl hover:bg-red-500 hover:text-white transition-all" title="Unlink Service"><Unlink size={18} /></button>
+                                                    ) : (
+                                                        <button onClick={() => handleSaveCred('gemini', geminiKey)} disabled={isLoading || !geminiKey} className="p-2.5 bg-cyan-500 text-slate-900 rounded-xl hover:bg-white transition-all shadow-glow"><LinkIcon size={18} /></button>
+                                                    )}
+                                                </div>
+                                                <a href="https://aistudio.google.com/app/apikey" target="_blank" rel="noreferrer" className="flex items-center gap-1.5 px-1 text-[9px] font-bold text-cyan-500 hover:text-white transition-colors uppercase tracking-tight"><ExternalLink size={10} /> Get API Key</a>
+                                            </div>
+
+                                            {/* 2. Model Preference Section */}
+                                            <div className="space-y-2 pt-2 border-t border-white/5">
+                                                <label className="text-[9px] font-black text-slate-500 uppercase tracking-widest ml-1">Model Preference</label>
+                                                <div className="flex gap-2">
+                                                    <select value={preferredModel} onChange={(e) => setPreferredModel(e.target.value)} className="flex-1 bg-black/40 border border-white/10 rounded-xl px-4 py-2.5 text-white text-xs outline-none focus:border-cyan-500 appearance-none">
+                                                        {models.map(m => <option key={m.name} value={m.name}>{m.name}</option>)}
+                                                    </select>
+                                                    <button onClick={() => handleSaveCred('gemini', null, true)} disabled={isLoading} className="p-2.5 bg-white/10 text-white border border-white/10 rounded-xl hover:bg-white hover:text-slate-900 transition-all" title="Save Preference"><Save size={18} /></button>
+                                                </div>
+                                            </div>
                                         </div>
                                     </div>
+
+                                    {/* GitHub Private Card */}
                                     <div className="p-8 bg-gradient-to-br from-indigo-500/10 to-purple-500/10 border border-indigo-500/20 rounded-[2rem] flex flex-col gap-6 relative overflow-hidden group">
                                         <div className="flex justify-between items-start"><div className="p-4 bg-indigo-500/20 rounded-2xl text-indigo-400"><Github size={32} /></div><div className={`px-3 py-1 rounded-full text-[9px] font-black uppercase tracking-widest ${credStatus.github ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30' : 'bg-slate-500/20 text-slate-500 border border-white/10'}`}>{credStatus.github ? 'Active' : 'Missing PAT'}</div></div>
                                         <div><div className="text-xl font-black text-white italic">GitHub Private</div><div className="text-[10px] text-slate-500 uppercase font-black tracking-widest mt-1">Personal Access Token</div></div>
-                                        <div className="space-y-3"><div className="space-y-1.5"><label className="text-[9px] font-black text-slate-500 uppercase tracking-widest ml-1">Access Token</label><input type="password" value={ghToken} onChange={(e) => setGhToken(e.target.value)} placeholder="ghp_****************" className="w-full bg-black/40 border border-white/10 rounded-xl px-4 py-3 text-white text-xs font-mono outline-none focus:border-indigo-500 transition-all" /></div><button onClick={() => handleSaveCred('github', ghToken)} disabled={isLoading || !ghToken} className="w-full bg-indigo-600 text-white font-black py-3 rounded-xl text-xs uppercase hover:bg-indigo-500 transition-all disabled:opacity-30">Save GitHub PAT</button></div>
+                                        <div className="space-y-3">
+                                            <div className="flex gap-2">
+                                                <input type="password" value={ghToken} onChange={(e) => setGhToken(e.target.value)} placeholder={credStatus.github ? "********" : "ghp_****************"} className="flex-1 bg-black/40 border border-white/10 rounded-xl px-4 py-3 text-white text-xs font-mono outline-none focus:border-indigo-500 transition-all" />
+                                                {credStatus.github && <button onClick={() => handleUnlink('github')} className="p-2.5 bg-red-500/20 text-red-400 border border-red-500/30 rounded-xl hover:bg-red-500 hover:text-white transition-all"><Unlink size={18} /></button>}
+                                            </div>
+                                            {!credStatus.github && <button onClick={() => handleSaveCred('github', ghToken)} disabled={isLoading || !ghToken} className="w-full bg-indigo-600 text-white font-black py-3 rounded-xl text-xs uppercase hover:bg-indigo-500 transition-all disabled:opacity-30">Link GitHub PAT</button>}
+                                        </div>
                                     </div>
                                 </div>
+
                                 <div className="p-10 bg-white/[0.02] border border-white/5 rounded-[2.5rem] space-y-8">
                                     <div className="flex justify-between items-end"><div><div className="flex items-center gap-3 mb-2"><div className="p-2 bg-white/5 rounded-lg text-slate-400"><Globe size={20} /></div><h4 className="text-xl font-black text-white uppercase italic">Open Source Integration</h4></div><p className="text-xs text-slate-500 font-light">토큰 없이 URL 주소만으로 공개 리포지토리를 추가합니다.</p></div></div>
                                     <div className="flex gap-3"><input type="text" value={publicRepoUrl} onChange={(e) => setPublicRepoUrl(e.target.value)} placeholder="e.g. facebook/react" className="flex-1 bg-black/40 border border-white/10 rounded-2xl px-5 py-4 text-white text-sm outline-none focus:border-white/30 transition-all" /><button onClick={handleAddPublicRepo} disabled={isLoading || !publicRepoUrl} className="px-8 bg-white text-slate-950 font-black rounded-2xl text-xs uppercase hover:bg-cyan-400 transition-all flex items-center gap-2"><Plus size={16} /> Add Repo</button></div>
-                                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">{publicRepos.map(repo => (<div key={repo} className="flex justify-between items-center px-5 py-4 bg-white/5 border border-white/5 rounded-2xl group"><div className="flex items-center gap-3"><div className="w-2 h-2 bg-emerald-500 rounded-full" /><span className="text-xs font-mono text-slate-300">{repo}</span></div><button onClick={() => handleDeletePublicRepo(repo)} className="p-2 text-slate-600 hover:text-red-400 opacity-0 group-hover:opacity-100 transition-all"><Trash2 size={14} /></button></div>))}</div>
+                                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">{publicRepos.map(repo => (<div key={repo} className="flex justify-between items-center px-5 py-4 bg-white/5 border border-white/5 rounded-2xl group"><div className="flex items-center gap-3"><div className="w-2 h-2 bg-emerald-500 rounded-full shadow-[0_0_8px_rgba(16,185,129,0.5)]" /><span className="text-xs font-mono text-slate-300">{repo}</span></div><button onClick={() => handleDeletePublicRepo(repo)} className="p-2 text-slate-600 hover:text-red-400 opacity-0 group-hover:opacity-100 transition-all"><Trash2 size={14} /></button></div>))}</div>
                                 </div>
                             </div>
                         )}
@@ -337,30 +361,20 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose, c
                         {activeTab === 'Admin' && (
                             <div className="space-y-8 animate-in slide-in-from-right-4 duration-300">
                                 <div className="flex flex-wrap md:flex-nowrap justify-between items-end gap-4 border-b border-white/5 pb-6">
-                                    <div className="min-w-0">
-                                        <h3 className="text-3xl font-black text-white mb-1 uppercase italic tracking-tighter truncate">계정관리</h3>
-                                        <p className="text-xs text-slate-500 font-light truncate">조직 전체 사용자 계정을 제어하고 정책을 관리합니다.</p>
-                                    </div>
+                                    <div className="min-w-0"><h3 className="text-3xl font-black text-white mb-1 uppercase italic tracking-tighter truncate">계정관리</h3><p className="text-xs text-slate-500 font-light truncate">조직 전체 사용자 계정을 제어하고 정책을 관리합니다.</p></div>
                                     <button onClick={openAddUser} className="shrink-0 flex items-center gap-2 bg-amber-500 text-slate-950 px-6 py-3 rounded-2xl text-xs font-black uppercase hover:bg-white transition-all shadow-glow"><Plus size={16} /> Add Member</button>
                                 </div>
                                 <div className="bg-black/20 border border-white/5 rounded-[2rem] overflow-hidden">
                                     <table className="w-full text-left border-collapse">
                                         <thead className="bg-white/5 text-[10px] font-black text-slate-500 uppercase tracking-[0.2em]"><tr className="border-b border-white/5"><th className="px-8 py-6">User Identity</th><th className="px-8 py-6">Role / Dept</th><th className="px-8 py-6">Email</th><th className="px-8 py-6 text-right">Actions</th></tr></thead>
-                                        <tbody className="text-xs">
-                                            {users.map(u => (
-                                                <tr key={u.id} className="border-b border-white/5 hover:bg-white/[0.02] transition-colors group/row">
-                                                    <td className="px-8 py-5"><div className="font-black text-slate-200">{u.name}</div><div className="text-[10px] text-cyan-500 font-mono mt-0.5">{u.username}</div></td>
-                                                    <td className="px-8 py-5"><div className="flex items-center gap-2"><span className={`px-2 py-0.5 rounded text-[9px] font-black uppercase ${u.role === 'admin' ? 'bg-amber-500 text-slate-950' : 'bg-white/10 text-slate-400'}`}>{u.role}</span><span className="text-[10px] text-slate-500 font-bold uppercase">{u.department || '-'}</span></div></td>
-                                                    <td className="px-8 py-5 text-slate-400 font-medium">{u.email || '-'}</td>
-                                                    <td className="px-8 py-5 text-right opacity-0 group-hover/row:opacity-100 transition-all">
-                                                        <div className="flex justify-end gap-1">
-                                                            <button onClick={() => openEditUser(u)} className="p-2 text-slate-500 hover:text-white hover:bg-white/5 rounded-lg transition-all"><Edit2 size={14} /></button>
-                                                            <button onClick={() => handleDeleteUser(u.id)} disabled={u.id === user?.id} className="p-2 text-slate-500 hover:text-red-400 hover:bg-red-500/5 rounded-lg transition-all disabled:opacity-0"><Trash2 size={14} /></button>
-                                                        </div>
-                                                    </td>
-                                                </tr>
-                                            ))}
-                                        </tbody>
+                                        <tbody className="text-xs">{users.map(u => (
+                                            <tr key={u.id} className="border-b border-white/5 hover:bg-white/[0.02] transition-colors group/row">
+                                                <td className="px-8 py-5"><div className="font-black text-slate-200">{u.name}</div><div className="text-[10px] text-cyan-500 font-mono mt-0.5">{u.username}</div></td>
+                                                <td className="px-8 py-5"><div className="flex items-center gap-2"><span className={`px-2 py-0.5 rounded text-[9px] font-black uppercase ${u.role === 'admin' ? 'bg-amber-500 text-slate-950' : 'bg-white/10 text-slate-400'}`}>{u.role}</span><span className="text-[10px] text-slate-500 font-bold uppercase">{u.department || '-'}</span></div></td>
+                                                <td className="px-8 py-5 text-slate-400 font-medium">{u.email || '-'}</td>
+                                                <td className="px-8 py-5 text-right opacity-0 group-hover/row:opacity-100 transition-all"><div className="flex justify-end gap-1"><button onClick={() => openEditUser(u)} className="p-2 text-slate-500 hover:text-white hover:bg-white/5 rounded-lg transition-all"><Edit2 size={14} /></button><button onClick={() => handleDeleteUser(u.id)} disabled={u.id === user?.id} className="p-2 text-slate-500 hover:text-red-400 hover:bg-red-500/5 rounded-lg transition-all disabled:opacity-0"><Trash2 size={14} /></button></div></td>
+                                            </tr>
+                                        ))}</tbody>
                                     </table>
                                     {isAdminLoading && <div className="p-10 flex justify-center"><Loader2 className="animate-spin text-amber-500" size={32} /></div>}
                                 </div>
@@ -376,15 +390,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose, c
                 <button onClick={onClose} className="absolute top-10 right-10 p-3 text-slate-500 hover:text-white transition-all bg-white/5 hover:bg-white/10 rounded-2xl"><X size={24} /></button>
             </div>
 
-            <UserEditModal 
-                isOpen={isUserModalOpen} 
-                onClose={() => setIsUserModalOpen(false)} 
-                onSuccess={fetchUsers}
-                mode={userModalMode}
-                userData={selectedUser}
-                currentUserId={user?.id || ''}
-                availableModels={models}
-            />
+            <UserEditModal isOpen={isUserModalOpen} onClose={() => setIsUserModalOpen(false)} onSuccess={fetchUsers} mode={userModalMode} userData={selectedUser} currentUserId={user?.id || ''} availableModels={models} />
         </div>
     );
 };
