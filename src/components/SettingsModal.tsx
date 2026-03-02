@@ -101,7 +101,7 @@ const UserEditModal: React.FC<{
                     
                     <div className="grid grid-cols-2 gap-6">
                         <div className="space-y-1.5"><label className="text-[10px] font-black text-slate-500 uppercase tracking-widest ml-1">{mode === 'edit' ? 'Change PW (Opt)' : 'Password*'}</label><input type="password" value={formData.password} onChange={(e) => setFormData({...formData, password: e.target.value})} className="w-full bg-black/40 border border-white/10 rounded-xl px-4 py-2.5 text-white text-sm outline-none" /></div>
-                        <div className="space-y-1.5"><label className="text-[10px] font-black text-slate-500 uppercase tracking-widest ml-1">Confirm PW</label><input type="password" value={formData.confirmPassword} onChange={(e) => setFormData({...formData, confirmPassword: e.target.value})} className={`w-full bg-black/40 border rounded-xl px-4 py-2.5 text-white text-sm outline-none ${formData.confirmPassword && !isPasswordMatched ? 'border-red-500/50' : 'border-white/10'}`} /></div>
+                        <div className="space-y-1.5"><label className="text-[10px] font-black text-slate-500 uppercase tracking-widest ml-1">Confirm PW</label><input type="password" value={formData.confirmPassword} onChange={(e) => setConfirmPw(e.target.value)} className={`w-full bg-black/40 border rounded-xl px-4 py-2.5 text-white text-sm outline-none ${formData.confirmPassword && !isPasswordMatched ? 'border-red-500/50' : 'border-white/10'}`} /></div>
                     </div>
 
                     <div className="space-y-1.5"><label className="text-[10px] font-black text-slate-500 uppercase tracking-widest ml-1">Preferred AI Model</label><select value={formData.preferred_model} onChange={(e) => setFormData({...formData, preferred_model: e.target.value})} className="w-full bg-black/40 border border-white/10 rounded-xl px-4 py-2.5 text-white text-sm outline-none">
@@ -131,16 +131,17 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose, c
     const [statusMsg, setStatusMsg] = useState({ type: '', text: '' });
 
     // State
-    const [profileForm, setProfileForm] = useState({ name: '', email: '', dept: '', newPw: '', confirmPw: '', preferred_model: '' });
+    const [profileForm, setProfileForm] = useState({ name: '', email: '', dept: '', newPw: '', confirmPw: '' });
     const [credStatus, setCredStatus] = useState<any>({ github: false, gemini: false });
     const [ghToken, setGhToken] = useState('');
     const [geminiKey, setGeminiKey] = useState('');
+    const [preferredModel, setPreferredModel] = useState(''); // [v3.8] 개별 상태로 관리
     const [isVerifying, setIsVerifying] = useState(false);
     const [publicRepoUrl, setPublicRepoUrl] = useState('');
     const [publicRepos, setPublicRepos] = useState<string[]>([]);
     const [users, setUsers] = useState<any[]>([]);
     const [isAdminLoading, setIsAdminLoading] = useState(false);
-    const [models, setModels] = useState<any[]>([]); // 가용 모델 목록
+    const [models, setModels] = useState<any[]>([]);
 
     // User Edit Modal State
     const [isUserModalOpen, setIsUserModalOpen] = useState(false);
@@ -151,8 +152,9 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose, c
         if (isOpen && user) {
             setProfileForm({ 
                 name: user.name || '', email: user.email || '', dept: user.department || '', 
-                newPw: '', confirmPw: '', preferred_model: user.preferred_model || 'gemini-2.0-flash' 
+                newPw: '', confirmPw: '' 
             });
+            setPreferredModel(user.preferred_model || 'gemini-2.0-flash');
             fetchCredentials();
             fetchPublicRepos();
             fetchModels();
@@ -197,37 +199,51 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose, c
         e.preventDefault();
         if (profileForm.newPw && profileForm.newPw !== profileForm.confirmPw) { setStatusMsg({ type: 'error', text: '비밀번호 확인이 일치하지 않습니다.' }); return; }
         setIsLoading(true);
+        setStatusMsg({ type: '', text: '' });
         try {
             const res = await fetch(`${API_URL}/api/me`, {
                 method: 'PUT',
                 headers: { 'Content-Type': 'application/json', 'x-user-id': user?.id || '' },
-                body: JSON.stringify({ ...profileForm, password: profileForm.newPw || undefined })
+                body: JSON.stringify({ 
+                    name: profileForm.name, 
+                    email: profileForm.email, 
+                    department: profileForm.dept, // [v3.8 Fix] department로 매핑
+                    password: profileForm.newPw || undefined 
+                })
             });
             if (res.ok) {
-                setStatusMsg({ type: 'success', text: '프로필 및 선호 설정이 저장되었습니다.' });
-                updateLocalUser({ name: profileForm.name, email: profileForm.email, department: profileForm.dept, preferred_model: profileForm.preferred_model });
-                // 선호 모델이 바뀌었으면 즉시 시스템에 적용
-                if (profileForm.preferred_model) await refreshModels();
+                setStatusMsg({ type: 'success', text: '프로필 정보가 저장되었습니다.' });
+                updateLocalUser({ name: profileForm.name, email: profileForm.email, department: profileForm.dept });
+            } else {
+                const data = await res.json();
+                setStatusMsg({ type: 'error', text: data.error || '저장 실패' });
             }
         } catch (e) { setStatusMsg({ type: 'error', text: '서버 통신 오류' }); } finally { setIsLoading(false); }
     };
 
     const handleSaveCred = async (serviceName: string, token: string) => {
-        if (!token) return;
+        if (!token && serviceName !== 'gemini') return;
         setIsLoading(true);
         if (serviceName === 'gemini') setIsVerifying(true);
         try {
             const res = await fetch(`${API_URL}/api/credentials`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json', 'x-user-id': user?.id || '' },
-                body: JSON.stringify({ serviceName, token })
+                body: JSON.stringify({ 
+                    serviceName, 
+                    token, 
+                    preferred_model: serviceName === 'gemini' ? preferredModel : undefined 
+                })
             });
             if (res.ok) {
-                setStatusMsg({ type: 'success', text: `${serviceName.toUpperCase()} 연동 성공.` });
+                setStatusMsg({ type: 'success', text: `${serviceName.toUpperCase()} 설정이 저장되었습니다.` });
                 if (serviceName === 'github') setGhToken(''); else setGeminiKey('');
                 fetchCredentials();
-                if (serviceName === 'gemini') await refreshModels();
-            } else { const data = await res.json(); setStatusMsg({ type: 'error', text: data.error || '연동 실패' }); }
+                if (serviceName === 'gemini') {
+                    updateLocalUser({ preferred_model: preferredModel });
+                    await refreshModels();
+                }
+            } else { const data = await res.json(); setStatusMsg({ type: 'error', text: data.error || '저장 실패' }); }
         } catch (e) { setStatusMsg({ type: 'error', text: '통신 오류' }); } finally { setIsLoading(false); setIsVerifying(false); }
     };
 
@@ -286,27 +302,28 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose, c
                                         <div className="space-y-1.5"><label className="text-[10px] font-black text-slate-500 uppercase tracking-widest ml-1">New PW</label><input type="password" value={profileForm.newPw} onChange={(e) => setProfileForm({...profileForm, newPw: e.target.value})} className="w-full bg-white/5 border border-white/10 rounded-2xl px-5 py-4 text-white text-sm focus:border-cyan-500 transition-all outline-none" placeholder="비밀번호 변경 시 입력" /></div>
                                         <div className="space-y-1.5"><label className="text-[10px] font-black text-slate-500 uppercase tracking-widest ml-1">Confirm PW</label><input type="password" value={profileForm.confirmPw} onChange={(e) => setProfileForm({...profileForm, confirmPw: e.target.value})} className={`w-full bg-white/5 border rounded-2xl px-5 py-4 text-white text-sm focus:border-cyan-500 outline-none ${profileForm.confirmPw && profileForm.newPw !== profileForm.confirmPw ? 'border-red-500/50' : 'border-white/10'}`} /></div>
                                     </div>
-                                    <div className="space-y-1.5"><label className="text-[10px] font-black text-slate-500 uppercase tracking-widest ml-1">Preferred AI Model</label><select value={profileForm.preferred_model} onChange={(e) => setProfileForm({...profileForm, preferred_model: e.target.value})} className="w-full bg-white/5 border border-white/10 rounded-2xl px-5 py-4 text-white text-sm outline-none appearance-none cursor-pointer focus:border-cyan-500">
-                                        {models.map(m => <option key={m.name} value={m.name}>{m.name}</option>)}
-                                    </select><p className="text-[9px] text-slate-600 px-1">로그인 시 자동으로 선택될 나만의 기본 AI 엔진입니다.</p></div>
                                 </div>
-                                <button type="submit" disabled={isLoading} className="flex items-center justify-center gap-3 w-full bg-cyan-500 text-slate-950 font-black py-5 rounded-3xl hover:bg-white transition-all shadow-glow"><Save size={20} /> Sync Profile & Preferences</button>
+                                <button type="submit" disabled={isLoading} className="flex items-center justify-center gap-3 w-full bg-cyan-500 text-slate-950 font-black py-5 rounded-3xl hover:bg-white transition-all shadow-glow"><Save size={20} /> Sync Profile Info</button>
                             </form>
                         )}
 
                         {activeTab === 'Credentials' && (
                             <div className="space-y-12 animate-in slide-in-from-right-4 duration-300">
-                                <div><h3 className="text-3xl font-black text-white mb-2 uppercase italic tracking-tighter">Credentials</h3><p className="text-sm text-slate-500 font-light">다양한 AI 엔진 및 개발 플랫폼과의 연동 키를 관리합니다.</p></div>
+                                <div><h3 className="text-3xl font-black text-white mb-2 uppercase italic tracking-tighter">Credentials</h3><p className="text-sm text-slate-500 font-light">AI 엔진 및 개발 도구와의 지능형 연동 설계를 관리합니다.</p></div>
                                 <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                                    <div className="p-8 bg-gradient-to-br from-cyan-500/10 to-blue-500/10 border border-cyan-500/20 rounded-[2rem] flex flex-col gap-6 relative overflow-hidden group">
+                                    <div className="p-8 bg-gradient-to-br from-cyan-500/10 to-blue-500/10 border border-cyan-500/20 rounded-[2.5rem] flex flex-col gap-6 relative overflow-hidden group">
                                         <div className="flex justify-between items-start"><div className="p-4 bg-cyan-500/20 rounded-2xl text-cyan-400"><Cpu size={32} /></div><div className={`px-3 py-1 rounded-full text-[9px] font-black uppercase tracking-widest ${credStatus.gemini ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30' : 'bg-slate-500/20 text-slate-500 border border-white/10'}`}>{credStatus.gemini ? 'Connected' : 'Not Linked'}</div></div>
                                         <div><div className="text-xl font-black text-white italic">Google Gemini</div><div className="text-[10px] text-slate-500 uppercase font-black tracking-widest mt-1">AI Reasoning Engine</div></div>
-                                        <div className="space-y-3"><div className="space-y-1.5"><input type="password" value={geminiKey} onChange={(e) => setGeminiKey(e.target.value)} placeholder="Enter API Key" className="w-full bg-black/40 border border-white/10 rounded-xl px-4 py-3 text-white text-xs font-mono outline-none focus:border-cyan-500 transition-all" /><a href="https://aistudio.google.com/app/apikey" target="_blank" rel="noreferrer" className="flex items-center gap-1.5 px-1 text-[9px] font-bold text-cyan-500 hover:text-white transition-colors uppercase tracking-tight"><ExternalLink size={10} /> Get API Key</a></div><button onClick={() => handleSaveCred('gemini', geminiKey)} disabled={isLoading || !geminiKey} className="w-full bg-white text-slate-950 font-black py-3 rounded-xl text-xs uppercase hover:bg-cyan-400 transition-all disabled:opacity-30 flex items-center justify-center gap-2">{isVerifying ? <Loader2 size={14} className="animate-spin" /> : null}{isVerifying ? 'Verifying...' : 'Link Gemini Key'}</button></div>
+                                        <div className="space-y-4">
+                                            <div className="space-y-1.5"><label className="text-[9px] font-black text-slate-500 uppercase tracking-widest ml-1">API Key</label><input type="password" value={geminiKey} onChange={(e) => setGeminiKey(e.target.value)} placeholder="Enter API Key" className="w-full bg-black/40 border border-white/10 rounded-xl px-4 py-3 text-white text-xs font-mono outline-none focus:border-cyan-500 transition-all" /><a href="https://aistudio.google.com/app/apikey" target="_blank" rel="noreferrer" className="flex items-center gap-1.5 px-1 text-[9px] font-bold text-cyan-500 hover:text-white transition-colors uppercase tracking-tight"><ExternalLink size={10} /> Get API Key</a></div>
+                                            <div className="space-y-1.5"><label className="text-[9px] font-black text-slate-500 uppercase tracking-widest ml-1">Preferred Model</label><select value={preferredModel} onChange={(e) => setPreferredModel(e.target.value)} className="w-full bg-black/40 border border-white/10 rounded-xl px-4 py-3 text-white text-xs outline-none focus:border-cyan-500">{models.map(m => <option key={m.name} value={m.name}>{m.name}</option>)}</select></div>
+                                            <button onClick={() => handleSaveCred('gemini', geminiKey)} disabled={isLoading} className="w-full bg-white text-slate-950 font-black py-3 rounded-xl text-xs uppercase hover:bg-cyan-400 transition-all disabled:opacity-30 flex items-center justify-center gap-2">{isVerifying ? <Loader2 size={14} className="animate-spin" /> : null}{isVerifying ? 'Verifying...' : 'Sync Gemini Config'}</button>
+                                        </div>
                                     </div>
                                     <div className="p-8 bg-gradient-to-br from-indigo-500/10 to-purple-500/10 border border-indigo-500/20 rounded-[2rem] flex flex-col gap-6 relative overflow-hidden group">
                                         <div className="flex justify-between items-start"><div className="p-4 bg-indigo-500/20 rounded-2xl text-indigo-400"><Github size={32} /></div><div className={`px-3 py-1 rounded-full text-[9px] font-black uppercase tracking-widest ${credStatus.github ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30' : 'bg-slate-500/20 text-slate-500 border border-white/10'}`}>{credStatus.github ? 'Active' : 'Missing PAT'}</div></div>
                                         <div><div className="text-xl font-black text-white italic">GitHub Private</div><div className="text-[10px] text-slate-500 uppercase font-black tracking-widest mt-1">Personal Access Token</div></div>
-                                        <div className="space-y-3"><input type="password" value={ghToken} onChange={(e) => setGhToken(e.target.value)} placeholder="ghp_****************" className="w-full bg-black/40 border border-white/10 rounded-xl px-4 py-3 text-white text-xs font-mono outline-none focus:border-indigo-500 transition-all" /><button onClick={() => handleSaveCred('github', ghToken)} disabled={isLoading || !ghToken} className="w-full bg-indigo-600 text-white font-black py-3 rounded-xl text-xs uppercase hover:bg-indigo-500 transition-all disabled:opacity-30">Save GitHub PAT</button></div>
+                                        <div className="space-y-3"><div className="space-y-1.5"><label className="text-[9px] font-black text-slate-500 uppercase tracking-widest ml-1">Access Token</label><input type="password" value={ghToken} onChange={(e) => setGhToken(e.target.value)} placeholder="ghp_****************" className="w-full bg-black/40 border border-white/10 rounded-xl px-4 py-3 text-white text-xs font-mono outline-none focus:border-indigo-500 transition-all" /></div><button onClick={() => handleSaveCred('github', ghToken)} disabled={isLoading || !ghToken} className="w-full bg-indigo-600 text-white font-black py-3 rounded-xl text-xs uppercase hover:bg-indigo-500 transition-all disabled:opacity-30">Save GitHub PAT</button></div>
                                     </div>
                                 </div>
                                 <div className="p-10 bg-white/[0.02] border border-white/5 rounded-[2.5rem] space-y-8">
@@ -328,7 +345,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose, c
                                 </div>
                                 <div className="bg-black/20 border border-white/5 rounded-[2rem] overflow-hidden">
                                     <table className="w-full text-left border-collapse">
-                                        <thead className="bg-white/5 text-[10px] font-black text-slate-500 uppercase tracking-[0.2em]"><tr className="border-b border-white/5"><th className="px-8 py-6">User Identity</th><th className="px-8 py-6">Name / Dept</th><th className="px-8 py-6">Email</th><th className="px-8 py-6 text-right">Actions</th></tr></thead>
+                                        <thead className="bg-white/5 text-[10px] font-black text-slate-500 uppercase tracking-[0.2em]"><tr className="border-b border-white/5"><th className="px-8 py-6">User Identity</th><th className="px-8 py-6">Role / Dept</th><th className="px-8 py-6">Email</th><th className="px-8 py-6 text-right">Actions</th></tr></thead>
                                         <tbody className="text-xs">
                                             {users.map(u => (
                                                 <tr key={u.id} className="border-b border-white/5 hover:bg-white/[0.02] transition-colors group/row">
