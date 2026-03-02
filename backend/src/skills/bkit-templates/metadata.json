@@ -1,0 +1,11 @@
+{
+  "id": "bkit-templates",
+  "name": "bkit-templates",
+  "description": "Specialized intelligence for bkit-templates",
+  "triggers": [
+    "템플릿",
+    "문서",
+    "template",
+    "양식"
+  ]
+}

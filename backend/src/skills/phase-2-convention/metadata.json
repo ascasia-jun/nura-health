@@ -1,0 +1,11 @@
+{
+  "id": "phase-2-convention",
+  "name": "phase-2-convention",
+  "description": "Specialized intelligence for phase-2-convention",
+  "triggers": [
+    "컨벤션",
+    "스타일",
+    "naming",
+    "convention"
+  ]
+}

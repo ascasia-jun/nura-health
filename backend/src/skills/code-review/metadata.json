@@ -1,0 +1,6 @@
+{
+  "id": "code-review",
+  "name": "Code Review",
+  "description": "Expert code review and analysis",
+  "triggers": ["리뷰", "검토", "review", "코드 분석", "코드 읽어"]
+}

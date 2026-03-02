@@ -1,0 +1,12 @@
+{
+  "id": "bkend-cookbook",
+  "name": "bkend-cookbook",
+  "description": "Specialized intelligence for bkend-cookbook",
+  "triggers": [
+    "튜토리얼",
+    "예제",
+    "example",
+    "만들기",
+    "프로젝트"
+  ]
+}

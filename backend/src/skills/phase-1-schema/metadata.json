@@ -1,0 +1,6 @@
+{
+  "id": "phase-1-schema",
+  "name": "Phase 1: Schema Design",
+  "description": "Terminology and database schema design",
+  "triggers": ["스키마", "테이블", "데이터 모델", "schema", "db", "데이터 구조"]
+}

@@ -1,0 +1,12 @@
+{
+  "id": "bkend-quickstart",
+  "name": "bkend-quickstart",
+  "description": "Specialized intelligence for bkend-quickstart",
+  "triggers": [
+    "시작",
+    "처음",
+    "setup",
+    "설정",
+    "연결"
+  ]
+}

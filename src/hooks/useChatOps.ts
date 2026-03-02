@@ -29,7 +29,7 @@ const INITIAL_MESSAGE: Message = {
 };
 
 /**
- * ChatOps 기능을 관리하는 커스텀 훅 (v3.1 - GitHub Insight Expansion)
+ * ChatOps 기능을 관리하는 커스텀 훅 (v3.3 - Auto Skill Trigger Support)
  */
 export const useChatOps = (initialModel: string = 'gemini-1.5-flash') => {
     const [messages, setMessages] = useState<Message[]>([INITIAL_MESSAGE]);
@@ -71,20 +71,13 @@ export const useChatOps = (initialModel: string = 'gemini-1.5-flash') => {
 
     const createNewSession = useCallback(() => {
         const newId = Date.now().toString();
-        const newSession: ChatSession = { 
-            id: newId, 
-            title: 'New Analysis Session', 
-            messages: [INITIAL_MESSAGE],
-            model: currentModel, 
-            timestamp: new Date(), 
-            draftInput: '', 
-            isLoading: false 
-        };
+        const newSession: ChatSession = { id: newId, title: 'New Analysis Session', messages: [INITIAL_MESSAGE], model: currentModel, timestamp: new Date(), draftInput: '', isLoading: false };
         setSessions(prev => [newSession, ...prev].slice(0, 20));
         setMessages([INITIAL_MESSAGE]);
         setCurrentSessionId(newId);
         setSelectedHooks([]);
         setAttachedResources([]);
+        setActiveSkillId(null);
     }, [currentModel]);
 
     const loadSession = useCallback((session: ChatSession, currentInput?: string) => {
@@ -96,8 +89,6 @@ export const useChatOps = (initialModel: string = 'gemini-1.5-flash') => {
         setCurrentSessionId(session.id);
         return session.draftInput || '';
     }, [currentSessionId]);
-
-    // --- GitHub 리소스 제어 ---
 
     const toggleHook = (fileName: string) => {
         setSelectedHooks(prev => prev.includes(fileName) ? prev.filter(h => h !== fileName) : [...prev, fileName]);
@@ -133,6 +124,12 @@ export const useChatOps = (initialModel: string = 'gemini-1.5-flash') => {
             const type = parsed.type === 'answer' ? 'text' : 'thought';
             const content = parsed.type === 'answer' ? parsed.text : parsed.content;
 
+            // [v3.3] 자동 스킬 활성화 신호 감지 및 UI 업데이트
+            if (type === 'thought' && content.startsWith('Auto-activating skill: ')) {
+                const skillId = content.replace('Auto-activating skill: ', '').trim();
+                setActiveSkillId(skillId);
+            }
+
             setMessages(prev => {
                 const updatedMessages = [...prev];
                 const last = updatedMessages[updatedMessages.length - 1];
@@ -152,7 +149,7 @@ export const useChatOps = (initialModel: string = 'gemini-1.5-flash') => {
                         !p.content?.startsWith('Completed:') && 
                         !p.content?.startsWith('Failed:')
                     );
-                    if (targetPart && content && (content.startsWith('Completed:') || content.startsWith('Failed:') || content.includes('Analyzing'))) {
+                    if (targetPart && (content.startsWith('Completed:') || content.startsWith('Failed:') || content.includes('Analyzing'))) {
                         targetPart.content = content;
                     } else if (content && !last.parts.some(p => p.type === 'thought' && p.content === content)) {
                         last.parts.push({ type: 'thought', content });
@@ -225,6 +222,7 @@ export const useChatOps = (initialModel: string = 'gemini-1.5-flash') => {
                 }),
             });
 
+            // 소모성 상태 초기화 (MD 훅과 리소스만, 스킬은 유지 또는 자동 활성화 감시)
             setSelectedHooks([]);
             setAttachedResources([]);
 

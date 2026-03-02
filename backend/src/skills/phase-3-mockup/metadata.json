@@ -1,0 +1,11 @@
+{
+  "id": "phase-3-mockup",
+  "name": "phase-3-mockup",
+  "description": "Specialized intelligence for phase-3-mockup",
+  "triggers": [
+    "목업",
+    "와이어프레임",
+    "mockup",
+    "프로토타입"
+  ]
+}

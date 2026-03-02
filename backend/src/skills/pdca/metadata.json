@@ -1,0 +1,13 @@
+{
+  "id": "pdca",
+  "name": "pdca",
+  "description": "Specialized intelligence for pdca",
+  "triggers": [
+    "계획",
+    "설계",
+    "수행",
+    "분석",
+    "pdca",
+    "보고서"
+  ]
+}

@@ -1,0 +1,11 @@
+{
+  "id": "dynamic",
+  "name": "dynamic",
+  "description": "Specialized intelligence for dynamic",
+  "triggers": [
+    "풀스택",
+    "fullstack",
+    "baas",
+    "동적"
+  ]
+}
