@@ -19,6 +19,7 @@ import { encrypt, decrypt } from '../utils/security';
 
 const router = Router();
 
+// --- [Utility: Get User Token] ---
 const getUserCredential = async (userId: string, serviceName: string) => {
     try {
         const db = getDb();
@@ -58,48 +59,30 @@ router.get('/credentials', async (req: Request, res: Response) => {
     } catch (e) { res.status(500).json({ error: 'Failed' }); }
 });
 
-/**
- * POST /api/credentials
- * [Hotfix] Gemini 키 및 선호 모델 동시 저장 로직 안정화
- */
 router.post('/credentials', async (req: Request, res: Response) => {
     const userId = req.headers['x-user-id'] as string;
     const { serviceName, token, preferred_model } = req.body;
     if (!userId) return res.status(401).json({ error: 'Unauthorized' });
-    
     try {
         const db = getDb();
-        
-        // 1. Gemini 특화 처리
         if (serviceName === 'gemini' && token) {
             const isValid = await validateGeminiKey(token);
             if (!isValid) return res.status(400).json({ error: '유효하지 않은 Gemini API 키입니다.' });
         }
-
-        // 2. 선호 모델 업데이트 (Gemini 요청 시 모델 정보가 있으면 무조건 업데이트)
         if (serviceName === 'gemini' && preferred_model) {
             await db.run('UPDATE users SET preferred_model = ? WHERE id = ?', [preferred_model, userId]);
         }
-        
-        // 3. 토큰 암호화 및 저장 (토큰이 있을 때만 수행)
         if (token) {
             const encrypted = encrypt(token);
             const existing = await db.get('SELECT id FROM user_credentials WHERE user_id = ? AND service_name = ?', [userId, serviceName]);
-            if (existing) {
-                await db.run('UPDATE user_credentials SET encrypted_token = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?', [encrypted, existing.id]);
-            } else {
-                await db.run('INSERT INTO user_credentials (user_id, service_name, encrypted_token) VALUES (?, ?, ?)', [userId, serviceName, encrypted]);
-            }
+            if (existing) await db.run('UPDATE user_credentials SET encrypted_token = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?', [encrypted, existing.id]);
+            else await db.run('INSERT INTO user_credentials (user_id, service_name, encrypted_token) VALUES (?, ?, ?)', [userId, serviceName, encrypted]);
         }
-        
-        res.json({ success: true, message: 'Settings saved.' });
-    } catch (e: any) { 
-        console.error('[API] Credentials error:', e.message);
-        res.status(500).json({ error: '서버 오류가 발생했습니다.' }); 
-    }
+        res.json({ success: true });
+    } catch (e) { res.status(500).json({ error: 'Save failed' }); }
 });
 
-// --- [Rest of the APIs - Full content maintained] ---
+// --- [User Session & History API] ---
 
 router.get('/sessions', async (req: Request, res: Response) => {
     const userId = req.headers['x-user-id'] as string;
@@ -136,6 +119,8 @@ router.get('/sessions/:id/messages', async (req: Request, res: Response) => {
         res.json({ messages });
     } catch (e) { res.status(500).json({ error: 'Load failed' }); }
 });
+
+// --- [GitHub API Routes] ---
 
 router.get('/github/public-repos', async (req: Request, res: Response) => {
     const userId = req.headers['x-user-id'] as string;
@@ -189,6 +174,8 @@ router.get('/github/repos/:owner/:repo/tree', async (req: Request, res: Response
     const token = await getUserCredential(userId, 'github');
     try { const tree = await githubService.fetchFileTree(token || "", owner, repo); res.json({ tree }); } catch (error: any) { res.status(500).json({ error: error.message }); }
 });
+
+// --- [Admin, Skills, Models API] ---
 
 router.get('/admin/users', async (req: Request, res: Response) => {
     const adminId = req.headers['x-user-id'] as string;
