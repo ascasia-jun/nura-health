@@ -129,11 +129,11 @@ export const ChatOpsPage: React.FC = () => {
         } catch (e) { console.error('모델 변경 실패'); }
     };
 
-    const resetAllSelections = () => { setActiveSkillId(null); };
+    const resetAllSelections = () => { 
+        setActiveSkillId(null); 
+        // hooks와 resources는 sendMessage 시 자동 초기화됨
+    };
 
-    /**
-     * [v3.4] 스킬 ID를 기반으로 스킬명을 찾아 반환합니다.
-     */
     const getSkillName = (id: string | null) => {
         if (!id) return null;
         const skill = skills.find(s => s.id === id);
@@ -142,7 +142,7 @@ export const ChatOpsPage: React.FC = () => {
 
     return (
         <div className="flex h-screen bg-slate-950 text-slate-200 font-sans overflow-hidden">
-            {/* 왼쪽 사이드바 */}
+            {/* 왼쪽 사이드바 (기존 유지) */}
             <aside className="w-72 bg-slate-900/50 border-r border-white/5 flex flex-col hidden md:flex backdrop-blur-xl">
                 <div className="p-6 flex items-center gap-3 border-b border-white/5">
                     <div className="w-8 h-8 bg-cyan-500 rounded-lg flex items-center justify-center text-slate-900 shadow-[0_0_15px_rgba(6,182,212,0.5)]"><Bot size={20} /></div>
@@ -190,29 +190,29 @@ export const ChatOpsPage: React.FC = () => {
                                 )}
                                 
                                 <div className={`max-w-[85%] md:max-w-[80%] rounded-2xl p-0 overflow-hidden flex flex-col gap-1 ${msg.role === 'user' ? 'bg-transparent items-end' : ''}`}>
+                                    {/* [v3.4] 사용자 말풍선 - 디자인 리뉴얼 (다크 테마 + 내부 헤더 배지) */}
                                     {msg.role === 'user' ? (
-                                        <div className="bg-cyan-600 text-white rounded-2xl rounded-tr-none shadow-xl overflow-hidden flex flex-col">
-                                            {/* [v3.4] 말풍선 내부 상단 배지 개선: ID 대신 Name 표시 */}
+                                        <div className="bg-slate-900/40 backdrop-blur-xl border border-white/10 rounded-2xl rounded-tr-none shadow-2xl overflow-hidden flex flex-col">
                                             {msg.meta && (msg.meta.activeSkillId || (msg.meta.selectedHooks?.length || 0) > 0 || (msg.meta.attachedResources?.length || 0) > 0) && (
-                                                <div className="flex flex-wrap gap-2 p-3 bg-black/10 border-b border-white/10">
+                                                <div className="flex flex-wrap gap-2 p-3 bg-white/5 border-b border-white/5">
                                                     {msg.meta.activeSkillId && (
-                                                        <span className="flex items-center gap-1.5 px-2.5 py-1 bg-amber-500 text-slate-950 rounded-lg text-[10px] font-black uppercase shadow-lg ring-1 ring-white/20">
-                                                            <Zap size={12} fill="currentColor" /> {getSkillName(msg.meta.activeSkillId)}
+                                                        <span className="flex items-center gap-1.5 px-2 py-0.5 bg-amber-500 text-slate-950 rounded text-[9px] font-black uppercase shadow-glow">
+                                                            <Zap size={10} fill="currentColor" /> {getSkillName(msg.meta.activeSkillId)}
                                                         </span>
                                                     )}
                                                     {msg.meta.selectedHooks?.map(h => (
-                                                        <span key={h} className="flex items-center gap-1 px-2 py-0.5 bg-white/20 text-white border border-white/20 rounded text-[9px] font-bold uppercase">
-                                                            <FileText size={10} /> {h}
+                                                        <span key={h} className="flex items-center gap-1.5 px-2 py-0.5 bg-cyan-500/20 text-cyan-400 border border-cyan-500/30 rounded text-[9px] font-black uppercase">
+                                                            <FileCode size={10} /> {h}
                                                         </span>
                                                     ))}
                                                     {msg.meta.attachedResources?.map((r: any) => (
-                                                        <span key={`${r.type}-${r.id}`} className="flex items-center gap-1 px-2 py-0.5 bg-indigo-500/50 text-white border border-white/10 rounded text-[9px] font-bold uppercase">
+                                                        <span key={`${r.type}-${r.id}`} className="flex items-center gap-1.5 px-2 py-0.5 bg-indigo-500/20 text-indigo-400 border border-indigo-500/30 rounded text-[9px] font-black uppercase">
                                                             <Hash size={10} /> {r.name}
                                                         </span>
                                                     ))}
                                                 </div>
                                             )}
-                                            <div className="p-5 md:p-6 text-sm md:text-base font-medium leading-relaxed">
+                                            <div className="p-5 md:p-8 text-sm md:text-base text-slate-100 leading-relaxed">
                                                 <MarkdownRenderer content={msg.parts?.[0]?.content || ''} />
                                             </div>
                                         </div>
@@ -245,6 +245,7 @@ export const ChatOpsPage: React.FC = () => {
                                         </div>
                                     )}
                                 </div>
+                                
                                 {msg.role === 'user' && (
                                     <div className="w-10 h-10 rounded-xl bg-white/5 text-slate-400 flex items-center justify-center shrink-0 mt-1 border border-white/10 shadow-lg"><User size={20} /></div>
                                 )}
@@ -255,58 +256,79 @@ export const ChatOpsPage: React.FC = () => {
                     <div ref={messagesEndRef} />
                 </div>
 
-                {/* 입력창 영역 */}
+                {/* [v3.4] 입력창 및 개선된 컨텍스트 바 영역 */}
                 <div className="p-6 md:p-10 bg-slate-900/60 backdrop-blur-3xl border-t border-white/5 space-y-4">
-                    <div className="max-w-4xl mx-auto flex items-center gap-3 px-2">
-                        <div className="relative">
-                            <button onClick={() => { setIsSkillListOpen(!isSkillListOpen); setIsHookListOpen(false); }} className={`flex items-center gap-1.5 px-4 py-2 border rounded-xl text-[11px] font-black transition-all uppercase tracking-widest ${activeSkillId ? 'bg-amber-500/20 border-amber-500/40 text-amber-400 shadow-[0_0_15px_rgba(245,158,11,0.2)]' : 'bg-white/5 border-white/10 text-slate-400 hover:text-amber-400'}`}>
-                                <Zap size={14} fill={activeSkillId ? 'currentColor' : 'none'} /> {activeSkillId ? `Skill: ${getSkillName(activeSkillId)}` : 'Select Skill'}
-                            </button>
-                            {isSkillListOpen && (
-                                <div className="absolute bottom-full left-0 mb-3 w-[500px] max-w-[90vw] bg-slate-900/95 backdrop-blur-2xl border border-white/10 rounded-2xl shadow-2xl overflow-hidden p-4 z-50 animate-in slide-in-from-bottom-2 duration-200">
-                                    <div className="flex justify-between items-center mb-3 px-2 border-b border-white/5 pb-2">
-                                        <div className="flex items-center gap-2"><Zap size={14} className="text-amber-400" /><span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Expert Intelligence ({(skills || []).length})</span></div>
-                                        <button onClick={() => { setActiveSkillId(null); setIsSkillListOpen(false); }} className="text-[9px] font-bold text-slate-500 hover:text-red-400 transition-colors uppercase">Reset Skill</button>
+                    <div className="max-w-4xl mx-auto flex flex-col gap-4 px-2">
+                        {/* 1. 툴바 (Skill / Hooks) */}
+                        <div className="flex items-center gap-3">
+                            <div className="relative">
+                                <button onClick={() => { setIsSkillListOpen(!isSkillListOpen); setIsHookListOpen(false); }} className={`flex items-center gap-1.5 px-4 py-2 border rounded-xl text-[11px] font-black transition-all uppercase tracking-widest ${activeSkillId ? 'bg-amber-500/20 border-amber-500/40 text-amber-400 shadow-[0_0_15px_rgba(245,158,11,0.2)]' : 'bg-white/5 border-white/10 text-slate-400 hover:text-amber-400'}`}>
+                                    <Zap size={14} fill={activeSkillId ? 'currentColor' : 'none'} /> {activeSkillId ? `Skill: ${getSkillName(activeSkillId)}` : 'Select Skill'}
+                                </button>
+                                {isSkillListOpen && (
+                                    <div className="absolute bottom-full left-0 mb-3 w-[500px] max-w-[90vw] bg-slate-900/95 backdrop-blur-2xl border border-white/10 rounded-2xl shadow-2xl overflow-hidden p-4 z-50 animate-in slide-in-from-bottom-2 duration-200">
+                                        <div className="flex justify-between items-center mb-3 px-2 border-b border-white/5 pb-2">
+                                            <div className="flex items-center gap-2"><Zap size={14} className="text-amber-400" /><span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Expert Intelligence ({(skills || []).length})</span></div>
+                                            <button onClick={() => { setActiveSkillId(null); setIsSkillListOpen(false); }} className="text-[9px] font-bold text-slate-500 hover:text-red-400 transition-colors uppercase">Reset Skill</button>
+                                        </div>
+                                        <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 overflow-y-auto max-h-[350px] p-1 custom-scrollbar">
+                                            {(skills || []).map(s => (
+                                                <button key={s.id} onClick={() => { setActiveSkillId(s.id); setIsSkillListOpen(false); }} className={`group flex items-center gap-2 px-3 py-2.5 rounded-xl border text-left transition-all duration-200 ${activeSkillId === s.id ? 'bg-amber-500/20 border-amber-500/50 text-amber-400 ring-1 ring-amber-500/30' : 'bg-white/5 border-white/10 text-slate-400 hover:bg-amber-500/10 hover:border-amber-500/30 hover:text-amber-300'}`}>
+                                                    <Zap size={10} className={activeSkillId === s.id ? 'text-amber-400' : 'text-slate-600 group-hover:text-amber-400'} />
+                                                    <span className="text-[10px] font-bold truncate leading-none">{s.name}</span>
+                                                </button>
+                                            ))}
+                                        </div>
                                     </div>
-                                    <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 overflow-y-auto max-h-[350px] p-1 custom-scrollbar">
-                                        {(skills || []).map(s => (
-                                            <button key={s.id} onClick={() => { setActiveSkillId(s.id); setIsSkillListOpen(false); }} className={`group flex items-center gap-2 px-3 py-2.5 rounded-xl border text-left transition-all duration-200 ${activeSkillId === s.id ? 'bg-amber-500/20 border-amber-500/50 text-amber-400 ring-1 ring-amber-500/30' : 'bg-white/5 border-white/10 text-slate-400 hover:bg-amber-500/10 hover:border-amber-500/30 hover:text-amber-300'}`}>
-                                                <Zap size={10} className={activeSkillId === s.id ? 'text-amber-400' : 'text-slate-600 group-hover:text-amber-400'} />
-                                                <span className="text-[10px] font-bold truncate leading-none">{s.name}</span>
-                                            </button>
-                                        ))}
+                                )}
+                            </div>
+
+                            <div className="relative">
+                                <button onClick={() => { setIsHookListOpen(!isHookListOpen); setIsSkillListOpen(false); }} className={`flex items-center gap-1.5 px-4 py-2 border rounded-xl text-[11px] font-black transition-all uppercase tracking-widest ${selectedHooks?.length > 0 ? 'bg-cyan-500/20 border-cyan-500/40 text-cyan-400 shadow-[0_0_15px_rgba(6,182,212,0.2)]' : 'bg-white/5 border-white/10 text-slate-400 hover:text-cyan-400'}`}>
+                                    <Hash size={14} /> Context Hooks {selectedHooks?.length > 0 && `(${selectedHooks.length})`}
+                                </button>
+                                {isHookListOpen && (
+                                    <div className="absolute bottom-full left-0 mb-3 w-[400px] max-w-[90vw] bg-slate-900/95 backdrop-blur-2xl border border-white/10 rounded-2xl shadow-2xl overflow-hidden p-4 z-50 animate-in slide-in-from-bottom-2 duration-200">
+                                        <div className="flex justify-between items-center mb-3 px-2 border-b border-white/5 pb-2">
+                                            <div className="flex items-center gap-2"><FileText size={14} className="text-cyan-400" /><span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Project Contexts</span></div>
+                                        </div>
+                                        <div className="grid grid-cols-2 gap-2 p-1">
+                                            {['GEMINI.md', 'plan.md', 'checklist.md', 'README.md'].map(fileName => (
+                                                <button key={fileName} onClick={() => toggleHook(fileName)} className={`flex items-center justify-between px-3 py-2.5 rounded-xl border text-left transition-all ${selectedHooks?.includes(fileName) ? 'bg-cyan-500/20 border-cyan-500/50 text-cyan-400' : 'bg-white/5 border-white/10 text-slate-400 hover:bg-white/10'}`}>
+                                                    <span className="text-[10px] font-bold truncate">{fileName}</span>
+                                                    {selectedHooks?.includes(fileName) && <Check size={12} className="text-cyan-400" />}
+                                                </button>
+                                            ))}
+                                        </div>
                                     </div>
-                                </div>
+                                )}
+                            </div>
+
+                            <div className="flex-1" />
+                            
+                            {(activeSkillId || (selectedHooks?.length || 0) > 0) && (
+                                <button onClick={resetAllSelections} className="flex items-center gap-1.5 px-3 py-2 text-slate-500 hover:text-red-400 transition-colors text-[10px] font-bold uppercase tracking-tighter">
+                                    <RotateCcw size={12} /> Reset All
+                                </button>
                             )}
                         </div>
 
-                        <div className="relative">
-                            <button onClick={() => { setIsHookListOpen(!isHookListOpen); setIsSkillListOpen(false); }} className={`flex items-center gap-1.5 px-4 py-2 border rounded-xl text-[11px] font-black transition-all uppercase tracking-widest ${selectedHooks?.length > 0 ? 'bg-cyan-500/20 border-cyan-500/40 text-cyan-400 shadow-[0_0_15px_rgba(6,182,212,0.2)]' : 'bg-white/5 border-white/10 text-slate-400 hover:text-cyan-400'}`}>
-                                <Hash size={14} /> Context Hooks {selectedHooks?.length > 0 && `(${selectedHooks.length})`}
-                            </button>
-                            {isHookListOpen && (
-                                <div className="absolute bottom-full left-0 mb-3 w-[400px] max-w-[90vw] bg-slate-900/95 backdrop-blur-2xl border border-white/10 rounded-2xl shadow-2xl overflow-hidden p-4 z-50 animate-in slide-in-from-bottom-2 duration-200">
-                                    <div className="flex justify-between items-center mb-3 px-2 border-b border-white/5 pb-2">
-                                        <div className="flex items-center gap-2"><FileText size={14} className="text-cyan-400" /><span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Project Contexts</span></div>
-                                    </div>
-                                    <div className="grid grid-cols-2 gap-2 p-1">
-                                        {['GEMINI.md', 'plan.md', 'checklist.md', 'README.md'].map(fileName => (
-                                            <button key={fileName} onClick={() => toggleHook(fileName)} className={`flex items-center justify-between px-3 py-2.5 rounded-xl border text-left transition-all ${selectedHooks?.includes(fileName) ? 'bg-cyan-500/20 border-cyan-500/50 text-cyan-400' : 'bg-white/5 border-white/10 text-slate-400 hover:bg-white/10'}`}>
-                                                <span className="text-[10px] font-bold truncate">{fileName}</span>
-                                                {selectedHooks?.includes(fileName) && <Check size={12} className="text-cyan-400" />}
-                                            </button>
-                                        ))}
-                                    </div>
-                                </div>
-                            )}
-                        </div>
-
-                        <div className="flex-1" />
-                        
-                        {(activeSkillId || (selectedHooks?.length || 0) > 0) && (
-                            <button onClick={resetAllSelections} className="flex items-center gap-1.5 px-3 py-2 text-slate-500 hover:text-red-400 transition-colors text-[10px] font-bold uppercase tracking-tighter">
-                                <RotateCcw size={12} /> Reset All
-                            </button>
+                        {/* [NEW] 2. 선택된 컨텍스트 노출 바 (입력창 바로 위) */}
+                        {(selectedHooks?.length > 0 || attachedResources?.length > 0) && (
+                            <div className="flex flex-wrap gap-2 py-2 px-1 animate-in fade-in slide-in-from-bottom-1 duration-300">
+                                {selectedHooks.map(h => (
+                                    <span key={h} className="flex items-center gap-1.5 px-2.5 py-1 bg-cyan-500/10 text-cyan-400 border border-cyan-500/20 rounded-lg text-[9px] font-black uppercase">
+                                        <FileCode size={10} /> {h}
+                                        <X size={10} className="cursor-pointer hover:text-white" onClick={() => toggleHook(h)} />
+                                    </span>
+                                ))}
+                                {attachedResources.map(r => (
+                                    <span key={`${r.type}-${r.id}`} className="flex items-center gap-1.5 px-2.5 py-1 bg-indigo-500/10 text-indigo-400 border border-indigo-500/20 rounded-lg text-[9px] font-black uppercase">
+                                        <Hash size={10} /> {r.name}
+                                        <X size={10} className="cursor-pointer hover:text-white" onClick={() => removeResource(r.type, r.id)} />
+                                    </span>
+                                ))}
+                            </div>
                         )}
                     </div>
 
@@ -316,7 +338,7 @@ export const ChatOpsPage: React.FC = () => {
                             onChange={(e) => setInput(e.target.value)}
                             onKeyDown={(e) => { if (!e.nativeEvent.isComposing && e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleSendMessage(); } }}
                             placeholder={activeSkillId ? `Ask anything with [${getSkillName(activeSkillId)}] skill...` : "AI에게 프로젝트 분석 명령을 입력하세요..."}
-                            className={`w-full bg-slate-800/40 text-slate-100 rounded-2xl pr-16 border border-white/10 focus:outline-none focus:border-cyan-500 shadow-2xl resize-none min-h-[64px] custom-scrollbar transition-all py-5 pl-6`}
+                            className={`w-full bg-slate-800/40 text-slate-100 rounded-2xl pr-16 border border-white/10 focus:outline-none focus:border-cyan-500 shadow-2xl resize-none min-h-[64px] max-h-48 custom-scrollbar transition-all py-5 pl-6`}
                             disabled={isCurrentSessionLoading}
                             rows={1}
                         />
@@ -329,7 +351,7 @@ export const ChatOpsPage: React.FC = () => {
 
             <SettingsModal isOpen={isSettingsOpen} onClose={() => setIsSettingsOpen(false)} currentModel={currentModel} />
 
-            {/* 오른쪽 사이드바 - 클릭 로직 수정 */}
+            {/* 오른쪽 사이드바 (기존 유지) */}
             {isRightSidebarOpen && (
                 <aside className="w-80 bg-slate-900/50 border-l border-white/5 flex flex-col backdrop-blur-xl animate-in slide-in-from-right duration-300">
                     <div className="p-6 border-b border-white/5">
@@ -359,39 +381,37 @@ export const ChatOpsPage: React.FC = () => {
                                 {isDataLoading ? <div className="flex flex-col items-center justify-center h-full opacity-30 gap-2"><Loader2 size={24} className="animate-spin" /></div> : (
                                     <div className="flex flex-col gap-2">
                                         {activeTab === 'PR' && (filteredItems || []).map(pr => (
-                                            <div key={pr.id} className={`p-3 bg-white/5 border rounded-xl group hover:border-cyan-500/30 transition-all ${attachedResources.find(r => r.type === 'pr' && r.id === String(pr.number)) ? 'border-indigo-500/50 bg-indigo-500/5 ring-1 ring-indigo-500/30' : 'border-white/5'}`}>
-                                                <div className="flex justify-between items-start gap-2 mb-2">
-                                                    <button onClick={() => handleResourceToggle('pr', pr)} className="text-xs font-bold text-slate-200 line-clamp-2 text-left hover:text-cyan-400 transition-colors uppercase flex-1">{pr.title}</button>
-                                                    <a href={pr.html_url} target="_blank" rel="noreferrer" className="p-1 hover:bg-white/10 rounded text-slate-500 shrink-0"><ExternalLink size={12} /></a>
+                                            <button key={pr.id} onClick={() => handleResourceToggle('pr', pr)} className={`w-full p-3 bg-white/5 border rounded-xl group transition-all text-left flex flex-col gap-2 hover:bg-white/10 ${attachedResources.find(r => r.type === 'pr' && r.id === String(pr.number)) ? 'border-indigo-500 bg-indigo-500/10 shadow-[0_0_15px_rgba(99,102,241,0.2)]' : 'border-white/5'}`}>
+                                                <div className="flex justify-between items-start gap-2">
+                                                    <span className={`text-xs font-bold transition-colors uppercase flex-1 line-clamp-2 ${attachedResources.find(r => r.type === 'pr' && r.id === String(pr.number)) ? 'text-indigo-400' : 'text-slate-200 group-hover:text-cyan-400'}`}>{pr.title}</span>
+                                                    <a href={pr.html_url} target="_blank" rel="noreferrer" onClick={(e) => e.stopPropagation()} className="p-1 hover:bg-white/10 rounded text-slate-500 shrink-0"><ExternalLink size={12} /></a>
                                                 </div>
                                                 <div className="flex items-center justify-between text-[9px] font-mono opacity-50"><span>#{pr.number} by {pr.user?.login}</span><span className={`px-1.5 py-0.5 rounded ${pr.state === 'open' ? 'bg-emerald-500/20 text-emerald-400' : 'bg-slate-500/20 text-slate-400'}`}>{pr.state}</span></div>
-                                            </div>
+                                            </button>
                                         ))}
                                         {activeTab === 'Push' && (filteredItems || []).map(commit => (
-                                            <div key={commit.sha} className={`p-3 bg-white/5 border rounded-xl group hover:border-cyan-500/30 transition-all ${attachedResources.find(r => r.type === 'commit' && r.id === commit.sha) ? 'border-indigo-500/50 bg-indigo-500/5 ring-1 ring-indigo-500/30' : 'border-white/5'}`}>
-                                                <div className="flex justify-between items-start gap-2 mb-1">
-                                                    <button onClick={() => handleResourceToggle('commit', commit)} className="text-xs font-bold text-slate-200 line-clamp-2 text-left hover:text-cyan-400 transition-colors flex-1">{commit.commit.message}</button>
-                                                    <a href={commit.html_url} target="_blank" rel="noreferrer" className="p-1 hover:bg-white/10 rounded text-slate-500 shrink-0"><ExternalLink size={12} /></a>
+                                            <button key={commit.sha} onClick={() => handleResourceToggle('commit', commit)} className={`w-full p-3 bg-white/5 border rounded-xl group transition-all text-left flex flex-col gap-1 hover:bg-white/10 ${attachedResources.find(r => r.type === 'commit' && r.id === commit.sha) ? 'border-indigo-500 bg-indigo-500/10 shadow-[0_0_15px_rgba(99,102,241,0.2)]' : 'border-white/5'}`}>
+                                                <div className="flex justify-between items-start gap-2">
+                                                    <span className={`text-xs font-bold transition-colors flex-1 line-clamp-2 ${attachedResources.find(r => r.type === 'commit' && r.id === commit.sha) ? 'text-indigo-400' : 'text-slate-200 group-hover:text-cyan-400'}`}>{commit.commit.message}</span>
+                                                    <a href={commit.html_url} target="_blank" rel="noreferrer" onClick={(e) => e.stopPropagation()} className="p-1 hover:bg-white/10 rounded text-slate-500 shrink-0"><ExternalLink size={12} /></a>
                                                 </div>
                                                 <div className="flex items-center justify-between text-[9px] font-mono opacity-50"><span>{commit.sha.substring(0, 7)}</span><span>{new Date(commit.commit.author.date).toLocaleDateString()}</span></div>
-                                            </div>
+                                            </button>
                                         ))}
                                         {activeTab === 'Code' && (filteredItems || []).map(file => {
                                             const depth = file.path.split('/').length - 1;
                                             const name = file.path.split('/').pop();
-                                            const githubUrl = `https://github.com/${selectedRepo.full_name}/blob/main/${file.path}`;
                                             const isAttached = attachedResources.find(r => r.type === 'file' && r.id === file.path);
                                             return (
-                                                <div key={file.path} className={`group flex items-center justify-between gap-2 p-1.5 rounded-lg transition-all hover:bg-white/5 ${isAttached ? 'bg-indigo-500/10' : ''}`} style={{ marginLeft: `${depth * 8}px` }}>
-                                                    <button onClick={() => file.type === 'blob' && handleResourceToggle('file', file)} className={`flex-1 flex items-center gap-2 truncate text-left ${isAttached ? 'text-indigo-400 font-bold' : 'text-slate-400 hover:text-slate-200'}`}>
+                                                <button key={file.path} onClick={() => file.type === 'blob' && handleResourceToggle('file', file)} className={`w-full group flex items-center justify-between gap-2 p-2 rounded-lg transition-all hover:bg-white/10 ${isAttached ? 'bg-indigo-500/10 border border-indigo-500/30 shadow-[0_0_10px_rgba(99,102,241,0.1)]' : ''}`} style={{ marginLeft: `${depth * 8}px`, width: `calc(100% - ${depth * 8}px)` }}>
+                                                    <div className={`flex-1 flex items-center gap-2 truncate text-left ${isAttached ? 'text-indigo-400 font-black' : 'text-slate-400 group-hover:text-slate-200'}`}>
                                                         {file.type === 'tree' ? <Folder size={12} className="text-cyan-500 shrink-0" /> : <FileCode size={12} className="text-slate-500 shrink-0" />}
                                                         <span className="text-[11px] truncate font-mono">{name}</span>
-                                                    </button>
-                                                    <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                                                        {file.type === 'blob' && <a href={githubUrl} target="_blank" rel="noreferrer" className="p-1 hover:bg-white/10 rounded text-slate-500"><ExternalLink size={10} /></a>}
-                                                        {file.type === 'blob' && <button onClick={() => handleResourceToggle('file', file)} className={`p-1 rounded ${isAttached ? 'bg-red-500/20 text-red-400' : 'bg-cyan-500/20 text-cyan-500'}`}>{isAttached ? <X size={10} /> : <Plus size={10} />}</button>}
                                                     </div>
-                                                </div>
+                                                    <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                                                        {file.type === 'blob' && <button className={`p-1 rounded ${isAttached ? 'bg-red-500/20 text-red-400' : 'bg-cyan-500/20 text-cyan-500'}`}>{isAttached ? <X size={10} /> : <Plus size={10} />}</button>}
+                                                    </div>
+                                                </button>
                                             );
                                         })}
                                     </div>
