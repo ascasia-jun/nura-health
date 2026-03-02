@@ -13,6 +13,12 @@ export interface Message {
     parts: ChatPart[];
     timestamp: Date;
     model?: string;
+    // [v3.4] UI 시각화를 위한 메타데이터 추가
+    meta?: {
+        activeSkillId?: string | null;
+        selectedHooks?: string[];
+        attachedResources?: any[];
+    };
 }
 
 export interface AIModel {

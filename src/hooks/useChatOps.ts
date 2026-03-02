@@ -29,7 +29,7 @@ const INITIAL_MESSAGE: Message = {
 };
 
 /**
- * ChatOps 기능을 관리하는 커스텀 훅 (v3.3 - Auto Skill Trigger Support)
+ * ChatOps 기능을 관리하는 커스텀 훅 (v3.4 - Meta Data Visualization Support)
  */
 export const useChatOps = (initialModel: string = 'gemini-1.5-flash') => {
     const [messages, setMessages] = useState<Message[]>([INITIAL_MESSAGE]);
@@ -124,7 +124,6 @@ export const useChatOps = (initialModel: string = 'gemini-1.5-flash') => {
             const type = parsed.type === 'answer' ? 'text' : 'thought';
             const content = parsed.type === 'answer' ? parsed.text : parsed.content;
 
-            // [v3.3] 자동 스킬 활성화 신호 감지 및 UI 업데이트
             if (type === 'thought' && content.startsWith('Auto-activating skill: ')) {
                 const skillId = content.replace('Auto-activating skill: ', '').trim();
                 setActiveSkillId(skillId);
@@ -169,10 +168,6 @@ export const useChatOps = (initialModel: string = 'gemini-1.5-flash') => {
         let activeId: string = sessionId || Date.now().toString();
 
         try {
-            const hookTags = selectedHooks.map(h => `@${h}`).join(' ');
-            const resTags = attachedResources.map(r => `@${r.type.toUpperCase()}:${r.name}`).join(' ');
-            const displayInput = [hookTags, resTags, input].filter(Boolean).join('\n');
-
             if (!sessionId) {
                 const newSession: ChatSession = { id: activeId, title: input.substring(0, 30), messages: [INITIAL_MESSAGE], model: currentModel, timestamp: new Date(), draftInput: '', isLoading: true };
                 setSessions(prev => [newSession, ...prev]);
@@ -184,12 +179,24 @@ export const useChatOps = (initialModel: string = 'gemini-1.5-flash') => {
             const targetSession = sessions.find(s => s.id === activeId);
             const baseMessages = targetSession?.messages || messages;
             
-            const userMsg: Message = { id: Date.now().toString(), role: 'user', parts: [{ type: 'text', content: displayInput }], timestamp: new Date() };
+            // [v3.4] UI 시각화를 위한 메타데이터 포함 메시지 생성
+            const userMsg: Message = { 
+                id: Date.now().toString(), 
+                role: 'user', 
+                parts: [{ type: 'text', content: input }], // 텍스트 태그 없이 본문만 저장
+                timestamp: new Date(),
+                meta: {
+                    activeSkillId,
+                    selectedHooks: [...selectedHooks],
+                    attachedResources: [...attachedResources]
+                }
+            };
             const aiMsg: Message = { id: (Date.now() + 1).toString(), role: 'assistant', parts: [], timestamp: new Date(), model: currentModel };
 
             const nextMessages: Message[] = [...(baseMessages || [INITIAL_MESSAGE]), userMsg, aiMsg];
             setMessages(nextMessages);
 
+            // 실제 API 전송용 컨텍스트 결합 로직은 기존 유지
             let hookContext = '';
             if (selectedHooks.length > 0) {
                 const contents = await Promise.all(selectedHooks.map(async h => {
@@ -222,7 +229,7 @@ export const useChatOps = (initialModel: string = 'gemini-1.5-flash') => {
                 }),
             });
 
-            // 소모성 상태 초기화 (MD 훅과 리소스만, 스킬은 유지 또는 자동 활성화 감시)
+            // 소모성 상태 초기화
             setSelectedHooks([]);
             setAttachedResources([]);
 

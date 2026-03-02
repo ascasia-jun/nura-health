@@ -146,7 +146,7 @@ export const ChatOpsPage: React.FC = () => {
                 </div>
                 <div className="p-4 border-b border-white/5 relative">
                     <button onClick={() => setIsModelListOpen(!isModelListOpen)} className="w-full flex items-center justify-between gap-2 px-3 py-2 bg-white/5 hover:bg-white/10 rounded-lg border border-white/10 transition-colors text-xs font-mono">
-                        <div className="flex items-center gap-2 overflow-hidden text-xs font-mono"><Sparkles size={14} className="text-cyan-400" /><span className="truncate">{currentModel}</span></div>
+                        <div className="flex items-center gap-2 overflow-hidden text-xs font-mono"><Sparkles size={14} className="text-cyan-400 shrink-0" /><span className="truncate">{currentModel}</span></div>
                         <ChevronDown size={14} className={isModelListOpen ? 'rotate-180' : ''} />
                     </button>
                     {isModelListOpen && (
@@ -178,7 +178,28 @@ export const ChatOpsPage: React.FC = () => {
                             {msg.role === 'assistant' && (msg.parts?.length || 0) > 0 && (
                                 <div className="w-10 h-10 rounded-xl bg-cyan-500/10 text-cyan-400 flex items-center justify-center shrink-0 mt-1 border border-cyan-500/20 shadow-lg"><Bot size={20} /></div>
                             )}
-                            <div className={`max-w-[85%] md:max-w-[80%] rounded-2xl p-0 overflow-hidden flex flex-col gap-1 ${msg.role === 'user' ? 'bg-transparent' : ''}`}>
+                            <div className={`max-w-[85%] md:max-w-[80%] rounded-2xl p-0 overflow-hidden flex flex-col gap-1 ${msg.role === 'user' ? 'bg-transparent items-end' : ''}`}>
+                                {/* [v3.4] 사용자 메시지 상단에 부착된 메타데이터 아이콘 표시 */}
+                                {msg.role === 'user' && msg.meta && (
+                                    <div className="flex flex-wrap gap-2 mb-1 justify-end">
+                                        {msg.meta.activeSkillId && (
+                                            <span className="flex items-center gap-1 px-2 py-0.5 bg-amber-500/20 text-amber-400 border border-amber-500/30 rounded text-[9px] font-black uppercase">
+                                                <Zap size={10} fill="currentColor" /> {msg.meta.activeSkillId}
+                                            </span>
+                                        )}
+                                        {msg.meta.selectedHooks?.map(h => (
+                                            <span key={h} className="flex items-center gap-1 px-2 py-0.5 bg-cyan-500/20 text-cyan-400 border border-cyan-500/30 rounded text-[9px] font-black uppercase">
+                                                <FileText size={10} /> {h}
+                                            </span>
+                                        ))}
+                                        {msg.meta.attachedResources?.map(r => (
+                                            <span key={`${r.type}-${r.id}`} className="flex items-center gap-1 px-2 py-0.5 bg-indigo-500/20 text-indigo-400 border border-indigo-500/30 rounded text-[9px] font-black uppercase">
+                                                <Hash size={10} /> {r.name}
+                                            </span>
+                                        ))}
+                                    </div>
+                                )}
+
                                 {msg.parts?.map((part, pIdx) => (
                                     part.type === 'thought' 
                                         ? <ProcessNode key={pIdx} content={part.content} />
