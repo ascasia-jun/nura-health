@@ -29,7 +29,7 @@ const INITIAL_MESSAGE: Message = {
 };
 
 /**
- * ChatOps 기능을 관리하는 커스텀 훅 (v3.4 - UI Optimization Support)
+ * ChatOps 기능을 관리하는 커스텀 훅 (v3.5 - Auto-Skill UI Sync)
  */
 export const useChatOps = (initialModel: string = 'gemini-1.5-flash') => {
     const [messages, setMessages] = useState<Message[]>([INITIAL_MESSAGE]);
@@ -120,14 +120,12 @@ export const useChatOps = (initialModel: string = 'gemini-1.5-flash') => {
         try {
             const parsed = JSON.parse(rawData);
             
-            // [v3.4] 에이전트 루프 종료 처리
             if (parsed.done) {
                 setMessages(prev => {
                     const next = [...prev];
                     const last = next[next.length - 1];
                     if (last && last.role === 'assistant') {
-                        // @ts-ignore
-                        last.isDone = true; // 최종 응답임을 표시
+                        last.isDone = true;
                     }
                     return next;
                 });
@@ -137,9 +135,27 @@ export const useChatOps = (initialModel: string = 'gemini-1.5-flash') => {
             const type = parsed.type === 'answer' ? 'text' : 'thought';
             const content = parsed.type === 'answer' ? parsed.text : parsed.content;
 
+            // [v3.5] 자동 스킬 활성화 신호 감지 및 사용자 말풍선 UI 동기화
             if (type === 'thought' && content.startsWith('Auto-activating skill: ')) {
                 const skillId = content.replace('Auto-activating skill: ', '').trim();
+                
+                // 1. 현재 툴바 상태 업데이트
                 setActiveSkillId(skillId);
+
+                // 2. 이미 렌더링된 사용자 메시지의 메타데이터 소급 업데이트
+                setMessages(prev => {
+                    const next = [...prev];
+                    // 역순으로 탐색하여 가장 최근의 사용자 메시지를 찾음
+                    for (let i = next.length - 1; i >= 0; i--) {
+                        if (next[i].role === 'user') {
+                            if (!next[i].meta) next[i].meta = {};
+                            // @ts-ignore
+                            next[i].meta.activeSkillId = skillId;
+                            break;
+                        }
+                    }
+                    return next;
+                });
             }
 
             setMessages(prev => {
