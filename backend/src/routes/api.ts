@@ -37,7 +37,25 @@ router.get('/skills', async (req: Request, res: Response) => {
             }
         }
         res.json({ skills });
-    } catch (e) { res.status(500).json({ error: 'Failed to load skills' }); }
+    } catch (e) { 
+        res.status(500).json({ error: 'Failed to load skills' }); 
+    }
+});
+
+/**
+ * GET /api/skills/:id/content (v3.5 - Skill Preview Support)
+ * 특정 스킬의 SKILL.md 파일 내용을 반환합니다.
+ */
+router.get('/skills/:id/content', async (req: Request, res: Response) => {
+    const { id } = req.params;
+    try {
+        const skillsDir = path.join(__dirname, '../skills');
+        const skillPath = path.join(skillsDir, id, 'SKILL.md');
+        const content = await fs.readFile(skillPath, 'utf-8');
+        res.json({ id, content });
+    } catch (e) {
+        res.status(404).json({ error: 'Skill content not found' });
+    }
 });
 
 router.get('/context/hook', async (req: Request, res: Response) => {

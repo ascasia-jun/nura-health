@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect, useCallback, useMemo } from 'react';
-import { Send, Bot, LogOut, Sparkles, Code, Terminal, MessageSquare, Plus, Settings, RotateCcw, User, ChevronDown, Loader2, Github, X, FileText, Zap, Hash, ExternalLink, GitPullRequest, GitMerge, FileCode, Folder, ChevronRight, Search, Check } from 'lucide-react';
+import { Send, Bot, LogOut, Sparkles, Code, Terminal, MessageSquare, Plus, Settings, RotateCcw, User, ChevronDown, Loader2, Github, X, FileText, Zap, Hash, ExternalLink, GitPullRequest, GitMerge, FileCode, Folder, ChevronRight, Search, Check, Eye } from 'lucide-react';
 import { useUser } from '../context/UserContext';
 import { API_URL } from '../config';
 import { SettingsModal } from './SettingsModal';
@@ -7,6 +7,7 @@ import { useChatOps } from '../hooks/useChatOps';
 import { MarkdownRenderer } from './Chat/MarkdownRenderer';
 import { ProcessNode } from './Chat/ProcessNode';
 import { ChatLoader } from './Chat/ChatLoader';
+import { ContentPreviewModal } from './Chat/ContentPreviewModal';
 
 type SidebarTab = 'PR' | 'Push' | 'Code';
 
@@ -20,6 +21,12 @@ export const ChatOpsPage: React.FC = () => {
     const [isSettingsOpen, setIsSettingsOpen] = useState(false);
     const [isRightSidebarOpen, setIsRightSidebarOpen] = useState(true);
     const [activeTab, setActiveTab] = useState<SidebarTab>('PR');
+    
+    // [v3.5] 미리보기 모달 상태
+    const [isPreviewOpen, setIsPreviewOpen] = useState(false);
+    const [previewContent, setPreviewContent] = useState('');
+    const [previewTitle, setPreviewTitle] = useState('');
+    const [isPreviewLoading, setIsPreviewLoading] = useState(false);
     
     const [repositories, setRepositories] = useState<any[]>([]);
     const [selectedRepo, setSelectedRepo] = useState<any>(null);
@@ -129,10 +136,26 @@ export const ChatOpsPage: React.FC = () => {
         } catch (e) { console.error('모델 변경 실패'); }
     };
 
-    const resetAllSelections = () => { 
-        setActiveSkillId(null); 
-        // hooks와 resources는 sendMessage 시 자동 초기화됨
+    const handleOpenPreview = async (type: 'skill' | 'hook', id: string, name: string) => {
+        setIsPreviewLoading(true);
+        setPreviewTitle(name);
+        setIsPreviewOpen(true);
+        try {
+            let url = '';
+            if (type === 'skill') url = `${API_URL}/api/skills/${id}/content`;
+            else url = `${API_URL}/api/context/hook?fileName=${id}`;
+            
+            const res = await fetch(url);
+            const data = await res.json();
+            setPreviewContent(data.content || '내용이 없습니다.');
+        } catch (e) {
+            setPreviewContent('콘텐츠를 불러오는 중 오류가 발생했습니다.');
+        } finally {
+            setIsPreviewLoading(false);
+        }
     };
+
+    const resetAllSelections = () => { setActiveSkillId(null); };
 
     const getSkillName = (id: string | null) => {
         if (!id) return null;
@@ -142,7 +165,7 @@ export const ChatOpsPage: React.FC = () => {
 
     return (
         <div className="flex h-screen bg-slate-950 text-slate-200 font-sans overflow-hidden">
-            {/* 왼쪽 사이드바 (기존 유지) */}
+            {/* 왼쪽 사이드바 */}
             <aside className="w-72 bg-slate-900/50 border-r border-white/5 flex flex-col hidden md:flex backdrop-blur-xl">
                 <div className="p-6 flex items-center gap-3 border-b border-white/5">
                     <div className="w-8 h-8 bg-cyan-500 rounded-lg flex items-center justify-center text-slate-900 shadow-[0_0_15px_rgba(6,182,212,0.5)]"><Bot size={20} /></div>
@@ -190,7 +213,6 @@ export const ChatOpsPage: React.FC = () => {
                                 )}
                                 
                                 <div className={`max-w-[85%] md:max-w-[80%] rounded-2xl p-0 overflow-hidden flex flex-col gap-1 ${msg.role === 'user' ? 'bg-transparent items-end' : ''}`}>
-                                    {/* [v3.4] 사용자 말풍선 - 디자인 리뉴얼 (다크 테마 + 내부 헤더 배지) */}
                                     {msg.role === 'user' ? (
                                         <div className="bg-slate-900/40 backdrop-blur-xl border border-white/10 rounded-2xl rounded-tr-none shadow-2xl overflow-hidden flex flex-col">
                                             {msg.meta && (msg.meta.activeSkillId || (msg.meta.selectedHooks?.length || 0) > 0 || (msg.meta.attachedResources?.length || 0) > 0) && (
@@ -217,7 +239,6 @@ export const ChatOpsPage: React.FC = () => {
                                             </div>
                                         </div>
                                     ) : (
-                                        /* AI 말풍선 */
                                         <div className={`relative flex flex-col gap-1 ${isDone ? 'final-report' : ''}`}>
                                             {isDone && (
                                                 <div className="flex justify-start mb-1">
@@ -227,7 +248,6 @@ export const ChatOpsPage: React.FC = () => {
                                                     </div>
                                                 </div>
                                             )}
-
                                             {msg.parts?.map((part, pIdx) => {
                                                 if (part.type === 'thought') {
                                                     const isProcessNode = part.content.startsWith('Completed:') || part.content.startsWith('Executing');
@@ -245,7 +265,6 @@ export const ChatOpsPage: React.FC = () => {
                                         </div>
                                     )}
                                 </div>
-                                
                                 {msg.role === 'user' && (
                                     <div className="w-10 h-10 rounded-xl bg-white/5 text-slate-400 flex items-center justify-center shrink-0 mt-1 border border-white/10 shadow-lg"><User size={20} /></div>
                                 )}
@@ -256,48 +275,67 @@ export const ChatOpsPage: React.FC = () => {
                     <div ref={messagesEndRef} />
                 </div>
 
-                {/* [v3.4] 입력창 및 개선된 컨텍스트 바 영역 */}
+                {/* 입력창 및 툴바 영역 */}
                 <div className="p-6 md:p-10 bg-slate-900/60 backdrop-blur-3xl border-t border-white/5 space-y-4">
                     <div className="max-w-4xl mx-auto flex flex-col gap-4 px-2">
-                        {/* 1. 툴바 (Skill / Hooks) */}
                         <div className="flex items-center gap-3">
+                            {/* Skill Dropdown */}
                             <div className="relative">
                                 <button onClick={() => { setIsSkillListOpen(!isSkillListOpen); setIsHookListOpen(false); }} className={`flex items-center gap-1.5 px-4 py-2 border rounded-xl text-[11px] font-black transition-all uppercase tracking-widest ${activeSkillId ? 'bg-amber-500/20 border-amber-500/40 text-amber-400 shadow-[0_0_15px_rgba(245,158,11,0.2)]' : 'bg-white/5 border-white/10 text-slate-400 hover:text-amber-400'}`}>
                                     <Zap size={14} fill={activeSkillId ? 'currentColor' : 'none'} /> {activeSkillId ? `Skill: ${getSkillName(activeSkillId)}` : 'Select Skill'}
                                 </button>
                                 {isSkillListOpen && (
-                                    <div className="absolute bottom-full left-0 mb-3 w-[500px] max-w-[90vw] bg-slate-900/95 backdrop-blur-2xl border border-white/10 rounded-2xl shadow-2xl overflow-hidden p-4 z-50 animate-in slide-in-from-bottom-2 duration-200">
+                                    <div className="absolute bottom-full left-0 mb-3 w-[550px] max-w-[90vw] bg-slate-900/95 backdrop-blur-2xl border border-white/10 rounded-2xl shadow-2xl overflow-hidden p-4 z-50 animate-in slide-in-from-bottom-2 duration-200">
                                         <div className="flex justify-between items-center mb-3 px-2 border-b border-white/5 pb-2">
                                             <div className="flex items-center gap-2"><Zap size={14} className="text-amber-400" /><span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Expert Intelligence ({(skills || []).length})</span></div>
                                             <button onClick={() => { setActiveSkillId(null); setIsSkillListOpen(false); }} className="text-[9px] font-bold text-slate-500 hover:text-red-400 transition-colors uppercase">Reset Skill</button>
                                         </div>
                                         <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 overflow-y-auto max-h-[350px] p-1 custom-scrollbar">
                                             {(skills || []).map(s => (
-                                                <button key={s.id} onClick={() => { setActiveSkillId(s.id); setIsSkillListOpen(false); }} className={`group flex items-center gap-2 px-3 py-2.5 rounded-xl border text-left transition-all duration-200 ${activeSkillId === s.id ? 'bg-amber-500/20 border-amber-500/50 text-amber-400 ring-1 ring-amber-500/30' : 'bg-white/5 border-white/10 text-slate-400 hover:bg-amber-500/10 hover:border-amber-500/30 hover:text-amber-300'}`}>
-                                                    <Zap size={10} className={activeSkillId === s.id ? 'text-amber-400' : 'text-slate-600 group-hover:text-amber-400'} />
-                                                    <span className="text-[10px] font-bold truncate leading-none">{s.name}</span>
-                                                </button>
+                                                <div key={s.id} className="relative group/item">
+                                                    <button onClick={() => { setActiveSkillId(s.id); setIsSkillListOpen(false); }} className={`w-full flex items-center gap-2 px-3 py-2.5 rounded-xl border text-left transition-all duration-200 ${activeSkillId === s.id ? 'bg-amber-500/20 border-amber-500/50 text-amber-400 ring-1 ring-amber-500/30' : 'bg-white/5 border-white/10 text-slate-400 hover:bg-amber-500/10 hover:border-amber-500/30 hover:text-amber-300'}`}>
+                                                        <Zap size={10} className={activeSkillId === s.id ? 'text-amber-400' : 'text-slate-600 group-hover:text-amber-400'} />
+                                                        <span className="text-[10px] font-bold truncate pr-4 leading-none">{s.name}</span>
+                                                    </button>
+                                                    <button 
+                                                        onClick={(e) => { e.stopPropagation(); handleOpenPreview('skill', s.id, s.name); }}
+                                                        className="absolute right-2 top-1/2 -translate-y-1/2 p-1.5 text-slate-600 hover:text-cyan-400 opacity-0 group-hover/item:opacity-100 transition-all"
+                                                        title="미리보기"
+                                                    >
+                                                        <Eye size={12} />
+                                                    </button>
+                                                </div>
                                             ))}
                                         </div>
                                     </div>
                                 )}
                             </div>
 
+                            {/* Hook Dropdown */}
                             <div className="relative">
                                 <button onClick={() => { setIsHookListOpen(!isHookListOpen); setIsSkillListOpen(false); }} className={`flex items-center gap-1.5 px-4 py-2 border rounded-xl text-[11px] font-black transition-all uppercase tracking-widest ${selectedHooks?.length > 0 ? 'bg-cyan-500/20 border-cyan-500/40 text-cyan-400 shadow-[0_0_15px_rgba(6,182,212,0.2)]' : 'bg-white/5 border-white/10 text-slate-400 hover:text-cyan-400'}`}>
                                     <Hash size={14} /> Context Hooks {selectedHooks?.length > 0 && `(${selectedHooks.length})`}
                                 </button>
                                 {isHookListOpen && (
-                                    <div className="absolute bottom-full left-0 mb-3 w-[400px] max-w-[90vw] bg-slate-900/95 backdrop-blur-2xl border border-white/10 rounded-2xl shadow-2xl overflow-hidden p-4 z-50 animate-in slide-in-from-bottom-2 duration-200">
+                                    <div className="absolute bottom-full left-0 mb-3 w-[450px] max-w-[90vw] bg-slate-900/95 backdrop-blur-2xl border border-white/10 rounded-2xl shadow-2xl overflow-hidden p-4 z-50 animate-in slide-in-from-bottom-2 duration-200">
                                         <div className="flex justify-between items-center mb-3 px-2 border-b border-white/5 pb-2">
                                             <div className="flex items-center gap-2"><FileText size={14} className="text-cyan-400" /><span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Project Contexts</span></div>
                                         </div>
                                         <div className="grid grid-cols-2 gap-2 p-1">
                                             {['GEMINI.md', 'plan.md', 'checklist.md', 'README.md'].map(fileName => (
-                                                <button key={fileName} onClick={() => toggleHook(fileName)} className={`flex items-center justify-between px-3 py-2.5 rounded-xl border text-left transition-all ${selectedHooks?.includes(fileName) ? 'bg-cyan-500/20 border-cyan-500/50 text-cyan-400' : 'bg-white/5 border-white/10 text-slate-400 hover:bg-white/10'}`}>
-                                                    <span className="text-[10px] font-bold truncate">{fileName}</span>
-                                                    {selectedHooks?.includes(fileName) && <Check size={12} className="text-cyan-400" />}
-                                                </button>
+                                                <div key={fileName} className="relative group/item">
+                                                    <button onClick={() => toggleHook(fileName)} className={`w-full flex items-center justify-between px-3 py-2.5 rounded-xl border text-left transition-all ${selectedHooks?.includes(fileName) ? 'bg-cyan-500/20 border-cyan-500/50 text-cyan-400' : 'bg-white/5 border-white/10 text-slate-400 hover:bg-white/10'}`}>
+                                                        <span className="text-[10px] font-bold truncate pr-4">{fileName}</span>
+                                                        {selectedHooks?.includes(fileName) && <Check size={12} className="text-cyan-400" />}
+                                                    </button>
+                                                    <button 
+                                                        onClick={(e) => { e.stopPropagation(); handleOpenPreview('hook', fileName, fileName); }}
+                                                        className="absolute right-8 top-1/2 -translate-y-1/2 p-1.5 text-slate-600 hover:text-cyan-400 opacity-0 group-hover/item:opacity-100 transition-all"
+                                                        title="미리보기"
+                                                    >
+                                                        <Eye size={12} />
+                                                    </button>
+                                                </div>
                                             ))}
                                         </div>
                                     </div>
@@ -305,7 +343,6 @@ export const ChatOpsPage: React.FC = () => {
                             </div>
 
                             <div className="flex-1" />
-                            
                             {(activeSkillId || (selectedHooks?.length || 0) > 0) && (
                                 <button onClick={resetAllSelections} className="flex items-center gap-1.5 px-3 py-2 text-slate-500 hover:text-red-400 transition-colors text-[10px] font-bold uppercase tracking-tighter">
                                     <RotateCcw size={12} /> Reset All
@@ -313,7 +350,7 @@ export const ChatOpsPage: React.FC = () => {
                             )}
                         </div>
 
-                        {/* [NEW] 2. 선택된 컨텍스트 노출 바 (입력창 바로 위) */}
+                        {/* Selected Context Bar */}
                         {(selectedHooks?.length > 0 || attachedResources?.length > 0) && (
                             <div className="flex flex-wrap gap-2 py-2 px-1 animate-in fade-in slide-in-from-bottom-1 duration-300">
                                 {selectedHooks.map(h => (
@@ -350,8 +387,17 @@ export const ChatOpsPage: React.FC = () => {
             </main>
 
             <SettingsModal isOpen={isSettingsOpen} onClose={() => setIsSettingsOpen(false)} currentModel={currentModel} />
+            
+            {/* [v3.5] 미리보기 모달 */}
+            <ContentPreviewModal 
+                isOpen={isPreviewOpen} 
+                onClose={() => setIsPreviewOpen(false)} 
+                title={previewTitle} 
+                content={previewContent} 
+                isLoading={isPreviewLoading}
+            />
 
-            {/* 오른쪽 사이드바 (기존 유지) */}
+            {/* 오른쪽 사이드바 */}
             {isRightSidebarOpen && (
                 <aside className="w-80 bg-slate-900/50 border-l border-white/5 flex flex-col backdrop-blur-xl animate-in slide-in-from-right duration-300">
                     <div className="p-6 border-b border-white/5">
