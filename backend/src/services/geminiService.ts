@@ -1,10 +1,27 @@
 import { GoogleGenerativeAI, HarmCategory, HarmBlockThreshold } from "@google/generative-ai";
+import axios from 'axios';
 import dotenv from 'dotenv';
 
 dotenv.config();
 
 // [v3.8] 공식 서비스용 최신 표준 모델로 기본값 변경
 let currentModelName = "gemini-2.0-flash";
+
+/**
+ * [v3.8] API Key 유효성 검증
+ */
+export const validateGeminiKey = async (apiKey: string): Promise<boolean> => {
+    try {
+        // 가장 가벼운 모델 목록 조회 엔드포인트로 유효성 확인
+        const res = await axios.get(`https://generativelanguage.googleapis.com/v1beta/models?key=${apiKey}`, {
+            timeout: 5000 // 5초 타임아웃
+        });
+        return res.status === 200;
+    } catch (e: any) {
+        console.error('[Gemini] Key validation failed:', e.response?.data || e.message);
+        return false;
+    }
+};
 
 /**
  * AI 응답을 생성하기 위한 제네레이티브 모델 인스턴스를 가져옵니다.
@@ -15,7 +32,6 @@ const getModel = (modelName: string = currentModelName, userApiKey?: string) => 
 
     const genAI = new GoogleGenerativeAI(apiKey);
     
-    // [v3.8] 구형 모델 요청 시 최신 표준 모델로 자동 폴백
     const deprecatedModels = ["gemini-1.5-flash", "gemini-1.5-pro", "gemini-2.0-flash-exp"];
     const targetModel = deprecatedModels.includes(modelName) ? "gemini-2.0-flash" : modelName;
 

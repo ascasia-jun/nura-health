@@ -11,9 +11,6 @@ interface SettingsModalProps {
 
 type SettingsTab = 'Profile' | 'Admin' | 'Credentials';
 
-/**
- * [v3.8] 통합 크리덴셜 및 공개 저장소 관리 시스템
- */
 export const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose, currentModel }) => {
     const { user, logout, updateLocalUser } = useUser();
     const [activeTab, setActiveTab] = useState<SettingsTab>('Profile');
@@ -29,6 +26,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose, c
     const [credStatus, setCredStatus] = useState<any>({ github: false, gemini: false });
     const [ghToken, setGhToken] = useState('');
     const [geminiKey, setGeminiKey] = useState('');
+    const [isVerifying, setIsVerifying] = useState(false); // [v3.8] 검증 중 상태
     const [publicRepoUrl, setPublicRepoUrl] = useState('');
     const [publicRepos, setPublicRepos] = useState<string[]>([]);
     
@@ -38,13 +36,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose, c
 
     useEffect(() => {
         if (isOpen && user) {
-            setProfileForm({ 
-                name: user.name || '', 
-                email: user.email || '', 
-                dept: user.department || '', 
-                newPw: '', 
-                confirmPw: '' 
-            });
+            setProfileForm({ name: user.name || '', email: user.email || '', dept: user.department || '', newPw: '', confirmPw: '' });
             if (activeTab === 'Credentials') { fetchCredentials(); fetchPublicRepos(); }
             if (activeTab === 'Admin' && user.role === 'admin') fetchUsers();
         }
@@ -86,12 +78,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose, c
             const res = await fetch(`${API_URL}/api/me`, {
                 method: 'PUT',
                 headers: { 'Content-Type': 'application/json', 'x-user-id': user?.id || '' },
-                body: JSON.stringify({ 
-                    name: profileForm.name, 
-                    email: profileForm.email, 
-                    department: profileForm.dept, 
-                    password: profileForm.newPw || undefined 
-                })
+                body: JSON.stringify({ name: profileForm.name, email: profileForm.email, department: profileForm.dept, password: profileForm.newPw || undefined })
             });
             if (res.ok) {
                 setStatusMsg({ type: 'success', text: '프로필이 업데이트되었습니다.' });
@@ -103,18 +90,27 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose, c
     const handleSaveCred = async (serviceName: string, token: string) => {
         if (!token) return;
         setIsLoading(true);
+        if (serviceName === 'gemini') setIsVerifying(true);
+        setStatusMsg({ type: '', text: '' });
+
         try {
             const res = await fetch(`${API_URL}/api/credentials`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json', 'x-user-id': user?.id || '' },
                 body: JSON.stringify({ serviceName, token })
             });
+            const data = await res.json();
             if (res.ok) {
                 setStatusMsg({ type: 'success', text: `${serviceName.toUpperCase()} 연동이 완료되었습니다.` });
                 if (serviceName === 'github') setGhToken(''); else setGeminiKey('');
                 fetchCredentials();
+            } else {
+                setStatusMsg({ type: 'error', text: data.error || '연동 실패' });
             }
-        } catch (e) {} finally { setIsLoading(false); }
+        } catch (e) { setStatusMsg({ type: 'error', text: '서버 통신 오류' }); } finally { 
+            setIsLoading(false); 
+            setIsVerifying(false);
+        }
     };
 
     const handleAddPublicRepo = async () => {
@@ -126,24 +122,15 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose, c
                 headers: { 'Content-Type': 'application/json', 'x-user-id': user?.id || '' },
                 body: JSON.stringify({ repoUrl: publicRepoUrl })
             });
-            if (res.ok) {
-                setStatusMsg({ type: 'success', text: '공개 저장소가 등록되었습니다.' });
-                setPublicRepoUrl('');
-                fetchPublicRepos();
-            } else {
-                const data = await res.json();
-                setStatusMsg({ type: 'error', text: data.error || '등록 실패' });
-            }
+            if (res.ok) { setStatusMsg({ type: 'success', text: '공개 저장소가 등록되었습니다.' }); setPublicRepoUrl(''); fetchPublicRepos(); }
+            else { const data = await res.json(); setStatusMsg({ type: 'error', text: data.error || '등록 실패' }); }
         } catch (e) {} finally { setIsLoading(false); }
     };
 
     const handleDeletePublicRepo = async (ownerRepo: string) => {
         const [owner, repo] = ownerRepo.split('/');
         try {
-            const res = await fetch(`${API_URL}/api/github/public-repos/${owner}/${repo}`, {
-                method: 'DELETE',
-                headers: { 'x-user-id': user?.id || '' }
-            });
+            const res = await fetch(`${API_URL}/api/github/public-repos/${owner}/${repo}`, { method: 'DELETE', headers: { 'x-user-id': user?.id || '' } });
             if (res.ok) fetchPublicRepos();
         } catch (e) {}
     };
@@ -154,26 +141,18 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose, c
         <div className="fixed inset-0 z-[150] flex items-center justify-center bg-black/60 backdrop-blur-sm p-4 animate-in fade-in duration-200">
             <div className="w-full max-w-5xl h-[700px] bg-slate-900 border border-white/10 rounded-[2.5rem] shadow-2xl flex overflow-hidden animate-in zoom-in-95 duration-200 font-sans relative">
                 
-                {/* Sidebar Navigation */}
                 <div className="w-64 bg-black/20 border-r border-white/5 p-8 flex flex-col gap-2 shrink-0">
-                    <div className="mb-10 px-2">
-                        <h2 className="text-2xl font-black text-white tracking-tighter italic uppercase flex items-center gap-2">Settings</h2>
-                        <div className="h-1 w-12 bg-cyan-500 rounded-full mt-2" />
-                    </div>
-                    
+                    <div className="mb-10 px-2"><h2 className="text-2xl font-black text-white tracking-tighter italic uppercase flex items-center gap-2">Settings</h2><div className="h-1 w-12 bg-cyan-500 rounded-full mt-2" /></div>
                     <button onClick={() => setActiveTab('Profile')} className={`flex items-center gap-3 px-5 py-3.5 rounded-2xl text-xs font-black uppercase tracking-widest transition-all ${activeTab === 'Profile' ? 'bg-white text-slate-950' : 'text-slate-500 hover:text-white hover:bg-white/5'}`}><User size={16} /> Profile</button>
                     <button onClick={() => setActiveTab('Credentials')} className={`flex items-center gap-3 px-5 py-3.5 rounded-2xl text-xs font-black uppercase tracking-widest transition-all ${activeTab === 'Credentials' ? 'bg-white text-slate-950' : 'text-slate-500 hover:text-white hover:bg-white/5'}`}><Key size={16} /> Credentials</button>
                     {user?.role === 'admin' && (
                         <button onClick={() => setActiveTab('Admin')} className={`flex items-center gap-3 px-5 py-3.5 rounded-2xl text-xs font-black uppercase tracking-widest transition-all ${activeTab === 'Admin' ? 'bg-amber-500 text-slate-950' : 'text-slate-500 hover:text-white hover:bg-white/5'}`}><Shield size={16} /> Admin</button>
                     )}
-                    
                     <div className="mt-auto"><button onClick={logout} className="w-full flex items-center gap-3 px-5 py-3.5 text-slate-600 hover:text-red-400 text-xs font-black uppercase transition-all"><LogOut size={16} /> Sign Out</button></div>
                 </div>
 
-                {/* Content Area */}
                 <div className="flex-1 flex flex-col overflow-hidden bg-slate-900/50 relative">
                     <div className="flex-1 overflow-y-auto p-12 custom-scrollbar">
-                        
                         {activeTab === 'Profile' && (
                             <form onSubmit={handleUpdateProfile} className="max-w-xl space-y-10 animate-in slide-in-from-right-4 duration-300">
                                 <div><h3 className="text-3xl font-black text-white mb-2 uppercase italic tracking-tighter">My Identity</h3><p className="text-sm text-slate-500 font-light">당신의 개인 프로필과 접속 권한을 최신화하세요.</p></div>
@@ -188,7 +167,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose, c
                                     </div>
                                     <div className="grid grid-cols-2 gap-6 pt-4">
                                         <div className="space-y-2"><label className="text-[10px] font-black text-slate-500 uppercase tracking-[0.2em] ml-1">New Password</label><input type="password" value={profileForm.newPw} onChange={(e) => setProfileForm({...profileForm, newPw: e.target.value})} className="w-full bg-white/5 border border-white/10 rounded-2xl px-5 py-4 text-white text-sm focus:border-cyan-500 transition-all outline-none" placeholder="Leave blank to keep" /></div>
-                                        <div className="space-y-2"><label className="text-[10px] font-black text-slate-500 uppercase tracking-[0.2em] ml-1">Confirm PW</label><input type="password" value={profileForm.confirmPw} onChange={(e) => setProfileForm({...profileForm, confirmPw: e.target.value})} className={`w-full bg-white/5 border rounded-2xl px-5 py-4 text-white text-sm outline-none transition-all ${profileForm.confirmPw && profileForm.newPw !== profileForm.confirmPw ? 'border-red-500/50' : 'border-white/10'}`} /></div>
+                                        <div className="space-y-2"><label className="text-[10px] font-black text-slate-500 uppercase tracking-[0.2em] ml-1">Confirm PW</label><input type="password" value={profileForm.confirmPw} onChange={(e) => setConfirmPw(e.target.value)} className={`w-full bg-white/5 border rounded-2xl px-5 py-4 text-white text-sm outline-none transition-all ${profileForm.confirmPw && profileForm.newPw !== profileForm.confirmPw ? 'border-red-500/50' : 'border-white/10'}`} /></div>
                                     </div>
                                 </div>
                                 <button type="submit" disabled={isLoading} className="flex items-center justify-center gap-3 w-full bg-cyan-500 text-slate-950 font-black py-5 rounded-3xl hover:bg-white transition-all shadow-glow"><Save size={20} /> Update Profile Info</button>
@@ -214,7 +193,10 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose, c
                                                     <ExternalLink size={10} /> Get your API Key from Google AI Studio
                                                 </a>
                                             </div>
-                                            <button onClick={() => handleSaveCred('gemini', geminiKey)} disabled={isLoading || !geminiKey} className="w-full bg-white text-slate-950 font-black py-3 rounded-xl text-xs uppercase hover:bg-cyan-400 transition-all disabled:opacity-30">Link Gemini Key</button>
+                                            <button onClick={() => handleSaveCred('gemini', geminiKey)} disabled={isLoading || !geminiKey} className="w-full bg-white text-slate-950 font-black py-3 rounded-xl text-xs uppercase hover:bg-cyan-400 transition-all disabled:opacity-30 flex items-center justify-center gap-2">
+                                                {isVerifying ? <Loader2 size={14} className="animate-spin" /> : null}
+                                                {isVerifying ? 'Verifying Key...' : 'Link Gemini Key'}
+                                            </button>
                                         </div>
                                     </div>
 
@@ -232,31 +214,10 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose, c
                                     </div>
                                 </div>
 
-                                {/* Public Repo Integration */}
                                 <div className="p-10 bg-white/[0.02] border border-white/5 rounded-[2.5rem] space-y-8">
-                                    <div className="flex justify-between items-end">
-                                        <div><div className="flex items-center gap-3 mb-2"><div className="p-2 bg-white/5 rounded-lg text-slate-400"><Globe size={20} /></div><h4 className="text-xl font-black text-white uppercase italic">Open Source Integration</h4></div><p className="text-xs text-slate-500 font-light">토큰 없이 URL 주소만으로 공개 리포지토리를 분석 목록에 추가합니다.</p></div>
-                                    </div>
-                                    <div className="flex gap-3">
-                                        <input type="text" value={publicRepoUrl} onChange={(e) => setPublicRepoUrl(e.target.value)} placeholder="e.g. facebook/react" className="flex-1 bg-black/40 border border-white/10 rounded-2xl px-5 py-4 text-white text-sm outline-none focus:border-white/30 transition-all" />
-                                        <button onClick={handleAddPublicRepo} disabled={isLoading || !publicRepoUrl} className="px-8 bg-white text-slate-950 font-black rounded-2xl text-xs uppercase hover:bg-cyan-400 transition-all flex items-center gap-2"><Plus size={16} /> Add Repo</button>
-                                    </div>
-                                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                                        {publicRepos.map(repo => (
-                                            <div key={repo} className="flex justify-between items-center px-5 py-4 bg-white/5 border border-white/5 rounded-2xl group">
-                                                <div className="flex items-center gap-3"><div className="w-2 h-2 bg-emerald-500 rounded-full shadow-[0_0_8px_rgba(16,185,129,0.5)]" /><span className="text-xs font-mono text-slate-300">{repo}</span></div>
-                                                <button onClick={() => handleDeletePublicRepo(repo)} className="p-2 text-slate-600 hover:text-red-400 opacity-0 group-hover:opacity-100 transition-all"><Trash2 size={14} /></button>
-                                            </div>
-                                        ))}
-                                        {publicRepos.length === 0 && <div className="col-span-full py-10 text-center border-2 border-dashed border-white/5 rounded-3xl text-[10px] text-slate-600 font-black uppercase tracking-widest italic">No public repos added yet</div>}
-                                    </div>
-                                </div>
-
-                                {/* Coming Soon services */}
-                                <div className="grid grid-cols-3 gap-4 opacity-30 grayscale pointer-events-none">
-                                    {['GitLab', 'n8n Hub', 'OpenAI'].map(s => (
-                                        <div key={s} className="p-6 border border-white/10 rounded-2xl flex flex-col items-center gap-2"><Database size={20} className="text-slate-500" /><span className="text-[10px] font-black uppercase tracking-widest">{s} Integration</span></div>
-                                    ))}
+                                    <div className="flex justify-between items-end"><div><div className="flex items-center gap-3 mb-2"><div className="p-2 bg-white/5 rounded-lg text-slate-400"><Globe size={20} /></div><h4 className="text-xl font-black text-white uppercase italic">Open Source Integration</h4></div><p className="text-xs text-slate-500 font-light">토큰 없이 URL 주소만으로 공개 리포지토리를 분석 목록에 추가합니다.</p></div></div>
+                                    <div className="flex gap-3"><input type="text" value={publicRepoUrl} onChange={(e) => setPublicRepoUrl(e.target.value)} placeholder="e.g. facebook/react" className="flex-1 bg-black/40 border border-white/10 rounded-2xl px-5 py-4 text-white text-sm outline-none focus:border-white/30 transition-all" /><button onClick={handleAddPublicRepo} disabled={isLoading || !publicRepoUrl} className="px-8 bg-white text-slate-950 font-black rounded-2xl text-xs uppercase hover:bg-cyan-400 transition-all flex items-center gap-2"><Plus size={16} /> Add Repo</button></div>
+                                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">{publicRepos.map(repo => (<div key={repo} className="flex justify-between items-center px-5 py-4 bg-white/5 border border-white/5 rounded-2xl group"><div className="flex items-center gap-3"><div className="w-2 h-2 bg-emerald-500 rounded-full shadow-[0_0_8px_rgba(16,185,129,0.5)]" /><span className="text-xs font-mono text-slate-300">{repo}</span></div><button onClick={() => handleDeletePublicRepo(repo)} className="p-2 text-slate-600 hover:text-red-400 opacity-0 group-hover:opacity-100 transition-all"><Trash2 size={14} /></button></div>))}{publicRepos.length === 0 && <div className="col-span-full py-10 text-center border-2 border-dashed border-white/5 rounded-3xl text-[10px] text-slate-600 font-black uppercase tracking-widest italic">No public repos added yet</div>}</div>
                                 </div>
                             </div>
                         )}
@@ -266,9 +227,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose, c
                                 <div><h3 className="text-3xl font-black text-white mb-2 uppercase italic tracking-tighter">System Governance</h3><p className="text-sm text-slate-500 font-light">조직의 모든 구성원과 데이터 접근 정책을 관리합니다.</p></div>
                                 <div className="bg-black/20 border border-white/5 rounded-[2rem] overflow-hidden">
                                     <table className="w-full text-left border-collapse"><thead className="bg-white/5 text-[10px] font-black text-slate-500 uppercase tracking-[0.2em]"><tr className="border-b border-white/5"><th className="px-8 py-6">User Identity</th><th className="px-8 py-6">Role / Dept</th><th className="px-8 py-6 text-right">Actions</th></tr></thead>
-                                        <tbody className="text-xs">{users.map(u => (
-                                            <tr key={u.id} className="border-b border-white/5 hover:bg-white/[0.02] transition-colors"><td className="px-8 py-5"><div className="font-black text-slate-200">{u.name}</div><div className="text-[10px] text-cyan-500 font-mono mt-0.5">{u.username}</div></td><td className="px-8 py-5"><div className="flex items-center gap-2"><span className={`px-2 py-0.5 rounded text-[9px] font-black uppercase ${u.role === 'admin' ? 'bg-amber-500 text-slate-950' : 'bg-white/10 text-slate-400'}`}>{u.role}</span><span className="text-[10px] text-slate-500 font-bold uppercase">{u.department || '-'}</span></div></td><td className="px-8 py-5 text-right opacity-0 group-hover:opacity-100"><button className="p-2 text-slate-500 hover:text-white"><Edit2 size={14} /></button></td></tr>
-                                        ))}</tbody>
+                                        <tbody className="text-xs">{users.map(u => (<tr key={u.id} className="border-b border-white/5 hover:bg-white/[0.02] transition-colors"><td className="px-8 py-5"><div className="font-black text-slate-200">{u.name}</div><div className="text-[10px] text-cyan-500 font-mono mt-0.5">{u.username}</div></td><td className="px-8 py-5"><div className="flex items-center gap-2"><span className={`px-2 py-0.5 rounded text-[9px] font-black uppercase ${u.role === 'admin' ? 'bg-amber-500 text-slate-950' : 'bg-white/10 text-slate-400'}`}>{u.role}</span><span className="text-[10px] text-slate-500 font-bold uppercase">{u.department || '-'}</span></div></td><td className="px-8 py-5 text-right opacity-0 group-hover:opacity-100"><button className="p-2 text-slate-500 hover:text-white"><Edit2 size={14} /></button></td></tr>))}</tbody>
                                     </table>
                                 </div>
                             </div>

@@ -8,7 +8,8 @@ import {
     getAiChatStreamResponse, 
     listAvailableModels, 
     setCurrentModel,
-    getCurrentModel
+    getCurrentModel,
+    validateGeminiKey
 } from '../services/geminiService';
 import { qaLogger } from '../utils/logger';
 import { githubService } from '../services/githubService';
@@ -25,52 +26,63 @@ const getUserCredential = async (userId: string, serviceName: string) => {
         const cred = await db.get('SELECT encrypted_token FROM user_credentials WHERE user_id = ? AND service_name = ?', [userId, serviceName]);
         if (cred) return decrypt(cred.encrypted_token);
     } catch (e) {}
-    // GitHub의 경우에만 시스템 기본 토큰 폴백 허용 (Gemini는 개인화 권장)
     return serviceName === 'github' ? process.env.GITHUB_TOKEN : null;
 };
 
 // --- [Credentials & Connection Management API] ---
 
-/**
- * GET /api/credentials
- * 각 서비스별 연동 상태 확인
- */
 router.get('/credentials', async (req: Request, res: Response) => {
     const userId = req.headers['x-user-id'] as string;
     if (!userId) return res.status(401).json({ error: 'Unauthorized' });
-
     try {
         const db = getDb();
         const creds = await db.all('SELECT service_name, updated_at FROM user_credentials WHERE user_id = ?', [userId]);
         const status = {
             github: creds.some(c => c.service_name === 'github'),
-            gemini: creds.some(c => c.service_name === 'gemini'),
-            gitlab: false, // 향후 확장
-            chatgpt: false
+            gemini: creds.some(c => c.service_name === 'gemini')
         };
         res.json({ status, creds });
-    } catch (e) { res.status(500).json({ error: 'Failed to fetch credential status' }); }
+    } catch (e) { res.status(500).json({ error: 'Failed to fetch credentials' }); }
 });
 
 /**
  * POST /api/credentials
- * 통합 서비스 키 저장 (Gemini, GitHub 등)
+ * [v3.8 Refinement] 유효성 검증 통합 및 500 에러 방어
  */
 router.post('/credentials', async (req: Request, res: Response) => {
     const userId = req.headers['x-user-id'] as string;
     const { serviceName, token } = req.body;
+    
     if (!userId) return res.status(401).json({ error: 'Unauthorized' });
-    if (!serviceName || !token) return res.status(400).json({ error: 'Missing parameters' });
+    if (!serviceName || !token) return res.status(400).json({ error: 'Service name and token are required' });
 
     try {
-        const db = getDb();
+        // 1. Gemini인 경우 키 유효성 실시간 검증
+        if (serviceName === 'gemini') {
+            const isValid = await validateGeminiKey(token);
+            if (!isValid) {
+                return res.status(400).json({ error: '유효하지 않은 Gemini API 키입니다. 다시 확인해주세요.' });
+            }
+        }
+
+        // 2. 암호화 수행 (security.ts의 방어 로직 활용)
         const encrypted = encrypt(token);
+        
+        // 3. DB 저장 (UPSERT)
+        const db = getDb();
         await db.run(
-            'INSERT INTO user_credentials (user_id, service_name, encrypted_token) VALUES (?, ?, ?) ON CONFLICT(user_id, service_name) DO UPDATE SET encrypted_token = EXCLUDED.encrypted_token, updated_at = CURRENT_TIMESTAMP',
+            `INSERT INTO user_credentials (user_id, service_name, encrypted_token) 
+             VALUES (?, ?, ?) 
+             ON CONFLICT(user_id, service_name) 
+             DO UPDATE SET encrypted_token = EXCLUDED.encrypted_token, updated_at = CURRENT_TIMESTAMP`,
             [userId, serviceName, encrypted]
         );
-        res.json({ success: true, message: `${serviceName} credential updated.` });
-    } catch (e) { res.status(500).json({ error: 'Failed to save credential' }); }
+        
+        res.json({ success: true, message: `${serviceName} credential saved successfully.` });
+    } catch (error: any) {
+        console.error('[API] Credential save error:', error.message);
+        res.status(500).json({ error: '서버 오류가 발생했습니다. 잠시 후 다시 시도해주세요.' });
+    }
 });
 
 // --- [Public Repository Management API] ---
@@ -86,9 +98,8 @@ router.get('/github/public-repos', async (req: Request, res: Response) => {
 
 router.post('/github/public-repos', async (req: Request, res: Response) => {
     const userId = req.headers['x-user-id'] as string;
-    const { repoUrl } = req.body; // 'facebook/react' 형식 기대
+    const { repoUrl } = req.body;
     if (!repoUrl) return res.status(400).json({ error: 'repoUrl is required' });
-
     try {
         const db = getDb();
         await db.run('INSERT INTO user_public_repos (user_id, repo_full_name) VALUES (?, ?)', [userId, repoUrl]);
@@ -108,18 +119,15 @@ router.delete('/github/public-repos/:owner/:repo', async (req: Request, res: Res
     } catch (e) { res.status(500).json({ error: 'Failed to delete' }); }
 });
 
-// --- [Existing Core API Implementation (Maintained & Enhanced)] ---
+// --- [Existing Core API Implementation (Full content remains same)] ---
 
 router.get('/github/repos', async (req: Request, res: Response) => {
     const userId = req.headers['x-user-id'] as string;
     const token = await getUserCredential(userId, 'github');
     try {
         const db = getDb();
-        // 1. 토큰 기반 프라이빗 리포지토리 로드
         let privateRepos: any[] = [];
         if (token) privateRepos = await githubService.fetchUserRepos(token);
-
-        // 2. 등록된 공개 리포지토리 정보 로드 (프록시 형태로 목록화)
         const publicRepoNames = await db.all('SELECT repo_full_name FROM user_public_repos WHERE user_id = ?', [userId]);
         const publicRepos = publicRepoNames.map(r => ({
             id: `pub_${r.repo_full_name}`,
@@ -127,7 +135,6 @@ router.get('/github/repos', async (req: Request, res: Response) => {
             name: r.repo_full_name.split('/').pop(),
             is_public: true
         }));
-
         res.json({ repos: [...publicRepos, ...privateRepos] });
     } catch (error: any) { res.status(500).json({ error: error.message }); }
 });
@@ -166,30 +173,25 @@ router.post('/chat/stream', async (req: Request, res: Response) => {
     const userId = req.headers['x-user-id'] as string;
     const { message, history, model, selectedRepo, activeSkillId, attachedResources, sessionId } = req.body;
     if (!userId) return res.status(401).json({ error: 'Unauthorized' });
-
     const ghToken = await getUserCredential(userId, 'github');
-    const geminiKey = await getUserCredential(userId, 'gemini'); // 사용자별 제미나이 키 조회
-
+    const geminiKey = await getUserCredential(userId, 'gemini');
     res.setHeader('Content-Type', 'text/event-stream');
     res.setHeader('Cache-Control', 'no-cache');
     res.setHeader('Connection', 'keep-alive');
-
     try {
         const repoContext = selectedRepo ? `Repository: ${selectedRepo.full_name}` : undefined;
         let activeHistory: any[] = [...history];
         let currentPrompt: string = message; 
         let finalSkillId = activeSkillId;
-
         if (!finalSkillId) {
             finalSkillId = await detectSkillFromMessage(message);
             if (finalSkillId) res.write(`data: ${JSON.stringify({ type: 'thought', content: `Auto-activating skill: ${finalSkillId}` })}\n\n`);
         }
-
         if (attachedResources?.length > 0) {
             const resourceContents = await Promise.all(attachedResources.map(async (resObj: any) => {
                 try {
                     let content = '';
-                    const token = ghToken || ""; // 공개 저장소면 빈 토큰으로 시도
+                    const token = ghToken || "";
                     if (resObj.type === 'pr') content = await githubService.fetchPullRequestDiff(token, resObj.owner, resObj.repo, Number(resObj.id));
                     else if (resObj.type === 'commit') content = await githubService.fetchCommitDiff(token, resObj.owner, resObj.repo, resObj.id);
                     else if (resObj.type === 'file') {
@@ -205,18 +207,15 @@ router.post('/chat/stream', async (req: Request, res: Response) => {
             }));
             currentPrompt = `${resourceContents.join('\n\n')}\n\n---\n\n${currentPrompt}`;
         }
-        
         if (finalSkillId) {
             const skillPath = path.join(__dirname, '../skills', finalSkillId, 'SKILL.md');
             const skillContent = await fs.readFile(skillPath, 'utf-8');
             currentPrompt = `<activated_skill name="${finalSkillId}">\n${skillContent}\n</activated_skill>\n\n${currentPrompt}`;
         }
-
         let iteration = 0;
         let fullAIResponse = '';
         while (iteration < 30) {
             iteration++;
-            // [v3.8] geminiKey 주입
             const result = await getAiChatStreamResponse(iteration === 1 ? currentPrompt : "", activeHistory, repoContext, model, geminiKey || undefined);
             let turnText = '';
             for await (const chunk of result.stream) {
@@ -263,7 +262,7 @@ router.post('/chat/stream', async (req: Request, res: Response) => {
     }
 });
 
-// --- [Existing Admin, Profile, Session APIs (Maintained)] ---
+// --- [Other APIs (Profile, Admin, Sessions, Models, Skills) - Maintained] ---
 
 router.put('/me', async (req: Request, res: Response) => {
     const userId = req.headers['x-user-id'] as string;
