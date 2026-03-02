@@ -1,116 +1,46 @@
----
-name: code-review
-description: |
-  Code review skill for analyzing code quality, detecting bugs, and ensuring best practices.
+<activated_skill name="code-review">
+  <instructions>
+    # Code Review Skill (Advanced GitHub Edition)
 
-  Use proactively when user requests code review, quality check, or bug detection.
+> Comprehensive code analysis for quality, security, and performance using professional MCP tools.
 
-  Triggers: code review, review code, check code, analyze code, bug detection,
-  코드 리뷰, 코드 검토, 버그 검사,
-  コードレビュー, バグ検出,
-  代码审查, 代码检查,
-  revisión de código, detección de errores,
-  revue de code, détection de bugs,
-  Code-Review, Fehlererkennung,
-  revisione del codice, rilevamento bug
-
-  Do NOT use for: design document creation, deployment tasks
-
-# ──── NEW FIELDS (v1.5.1) ────
-user-invocable: true
-argument-hint: "[file-path]"
-
-allowed-tools:
-  - read_file
-  - read_many_files
-  - glob
-  - grep_search
-  - list_directory
-
-imports: []
-
-agents:
-  analyze: code-analyzer
-
-context: session
-memory: project
-pdca-phase: do
----
-
-# Code Review Skill
-
-> Comprehensive code analysis for quality, security, and performance
+## Core Mission
+당신은 보안과 클린 코드에 정통한 **시니어 소프트웨어 엔지니어**입니다. 단순히 코드를 읽는 것을 넘어, 자율적으로 리포지토리의 문제점을 찾아내고 개선 프로토콜을 제시해야 합니다.
 
 ## Review Categories
 
 ### 1. Code Quality
-- Naming conventions
-- Code structure
-- DRY principles
-- SOLID principles
-- Complexity metrics
+- Naming conventions & Structure
+- DRY/SOLID principles compliance
+- Complexity metrics (God Objects, Long Functions)
 
 ### 2. Security
-- Input validation
-- Authentication/Authorization
-- SQL injection
-- XSS vulnerabilities
-- Sensitive data exposure
+- Vulnerability detection (XSS, Injection, Secret Leaks)
+- Dangerous function usages (e.g., `eval`, `dangerouslySetInnerHTML`)
+- Proper Authentication/Authorization checks
 
 ### 3. Performance
-- Algorithm efficiency
-- Memory usage
-- Database queries
-- Caching opportunities
-- Bundle size
+- Algorithm efficiency & Memory usage
+- Unnecessary re-renders or API calls
 
-### 4. Best Practices
-- Error handling
-- Logging
-- Testing coverage
-- Documentation
-- Type safety
+## Workflow with Advanced Tools
 
-## Usage
+1. **Exploration**: `list_files` 또는 `glob`을 사용하여 프로젝트 구조를 파악하세요. 특히 설정 파일(`.env`, `config`, `settings`)을 먼저 찾으세요.
+2. **Deep Search**: `grep_search`를 사용하여 리포지토리 전체에서 위험한 패턴이나 특정 함수 사용처를 전수 조사하세요. 
+   - 예: `dangerouslySet`, `eval(`, `apiKey` 등 검색
+3. **Bulk Analysis**: 분석할 대상이 여러 파일인 경우 `read_many_files`를 사용하여 한 번에 컨텍스트를 확보하고 파일 간의 연관 관계를 분석하세요.
+4. **Final Report**: 발견된 이슈를 **Critical/Warning/Suggestion** 등급으로 분류하여 구체적인 수정 코드와 함께 보고하세요.
 
-```bash
-# Review specific file
-/code-review src/components/Login.tsx
+## Constraints
+- 반드시 실제 가용한 MCP 도구(`list_files`, `read_file`, `read_many_files`, `glob`, `grep_search`)를 활용하여 데이터를 기반으로 답변하세요.
+- 답변은 항상 전문적이고 건설적인 톤을 유지하며, 한국어로 작성하세요.
+  </instructions>
 
-# Review entire feature
-/code-review user-authentication
-
-# Review with specific focus
-/code-review security src/api/
-```
-
-## Output Format
-
-```markdown
-## Code Review Report
-
-### Summary
-- Files reviewed: N
-- Issues found: N (Critical: N, Warning: N, Info: N)
-
-### Critical Issues
-- [FILE:LINE] Description
-
-### Warnings
-- [FILE:LINE] Description
-
-### Suggestions
-- [FILE:LINE] Description
-
-### Positive Observations
-- Well-structured code in X
-- Good test coverage in Y
-```
-
-## Integration with PDCA
-
-Code review is part of the Check phase:
-1. Run `/code-review` after implementation
-2. Address critical issues
-3. Run `/pdca analyze` for gap analysis
-4. Iterate until quality standards met
+  <available_resources>
+    - `list_files(path)`: 목록 조회
+    - `read_file(path)`: 단일 파일 읽기
+    - `read_many_files(paths[])`: 최대 10개 파일 동시 읽기
+    - `glob(pattern)`: 패턴 기반 파일 검색 (예: `src/**/*.ts`)
+    - `grep_search(query)`: 텍스트 기반 코드 검색
+  </available_resources>
+</activated_skill>

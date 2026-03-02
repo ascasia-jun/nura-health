@@ -15,11 +15,7 @@ import { detectSkillFromMessage } from '../utils/skillDetector';
 
 const router = Router();
 
-// --- Skills & Context Hook API ---
-
-/**
- * GET /api/skills (v3.2 - Standardized Folder Structure)
- */
+// --- Skills & Context Hook API (기존 유지) ---
 router.get('/skills', async (req: Request, res: Response) => {
     try {
         const skillsDir = path.join(__dirname, '../skills');
@@ -37,15 +33,9 @@ router.get('/skills', async (req: Request, res: Response) => {
             }
         }
         res.json({ skills });
-    } catch (e) { 
-        res.status(500).json({ error: 'Failed to load skills' }); 
-    }
+    } catch (e) { res.status(500).json({ error: 'Failed to load skills' }); }
 });
 
-/**
- * GET /api/skills/:id/content (v3.5 - Skill Preview Support)
- * 특정 스킬의 SKILL.md 파일 내용을 반환합니다.
- */
 router.get('/skills/:id/content', async (req: Request, res: Response) => {
     const { id } = req.params;
     try {
@@ -53,9 +43,7 @@ router.get('/skills/:id/content', async (req: Request, res: Response) => {
         const skillPath = path.join(skillsDir, id, 'SKILL.md');
         const content = await fs.readFile(skillPath, 'utf-8');
         res.json({ id, content });
-    } catch (e) {
-        res.status(404).json({ error: 'Skill content not found' });
-    }
+    } catch (e) { res.status(404).json({ error: 'Skill content not found' }); }
 });
 
 router.get('/context/hook', async (req: Request, res: Response) => {
@@ -70,7 +58,7 @@ router.get('/context/hook', async (req: Request, res: Response) => {
     } catch (e) { res.status(500).json({ error: 'Failed to read file' }); }
 });
 
-// --- GitHub API ---
+// --- GitHub API (기존 유지) ---
 router.get('/github/repos', async (req: Request, res: Response) => {
     const token = process.env.GITHUB_TOKEN;
     if (!token) return res.status(500).json({ error: 'GitHub token missing' });
@@ -136,7 +124,7 @@ router.post('/diagnose', async (req: Request, res: Response) => {
 });
 
 /**
- * POST /api/chat/stream (v3.3 - Auto Skill Trigger)
+ * POST /api/chat/stream (v3.5 - Advanced MCP Tools)
  */
 router.post('/chat/stream', async (req: Request, res: Response) => {
     const { message, history, model, selectedRepo, activeSkillId, attachedResources } = req.body;
@@ -159,9 +147,7 @@ router.post('/chat/stream', async (req: Request, res: Response) => {
         if (!finalSkillId) {
             finalSkillId = await detectSkillFromMessage(message);
             if (finalSkillId) {
-                // 클라이언트에 자동 감지 알림 전송 (type: thought)
                 res.write(`data: ${JSON.stringify({ type: 'thought', content: `Auto-activating skill: ${finalSkillId}` })}\n\n`);
-                // UI 동기화를 위한 이벤트 (선택 사항: 클라이언트가 이 thought를 보고 상태 업데이트 가능)
                 res.write(`data: ${JSON.stringify({ type: 'thought', content: `Analyzing with specialized intelligence: ${finalSkillId.toUpperCase()}` })}\n\n`);
             }
         }
@@ -231,15 +217,40 @@ router.post('/chat/stream', async (req: Request, res: Response) => {
                 res.write(`data: ${JSON.stringify({ type: 'thought', content: `Executing ${call.name}...` })}\n\n`);
                 let toolResult: any;
                 try {
-                    if (call.name === 'list_files' && selectedRepo) {
-                        const [owner, repo] = selectedRepo.full_name.split('/');
+                    const [owner, repo] = selectedRepo ? selectedRepo.full_name.split('/') : [null, null];
+                    
+                    if (call.name === 'list_files' && owner && repo) {
                         toolResult = await githubService.fetchRepoContent(token, owner, repo, (call.args as any).path || '');
-                    } else if (call.name === 'read_file' && selectedRepo) {
-                        const [owner, repo] = selectedRepo.full_name.split('/');
+                    } else if (call.name === 'read_file' && owner && repo) {
                         const data = await githubService.fetchRepoContent(token, owner, repo, (call.args as any).path);
                         toolResult = data.content ? Buffer.from(data.content, 'base64').toString('utf-8') : JSON.stringify(data);
-                        if (toolResult.length > 8000) toolResult = toolResult.substring(0, 8000) + "...(truncated)";
+                    } else if (call.name === 'read_many_files' && owner && repo) {
+                        // [신규] 대량 읽기 구현
+                        const paths = (call.args as any).paths || [];
+                        const files = await Promise.all(paths.slice(0, 10).map(async (p: string) => {
+                            try {
+                                const data = await githubService.fetchRepoContent(token, owner, repo, p);
+                                return { path: p, content: data.content ? Buffer.from(data.content, 'base64').toString('utf-8').substring(0, 5000) : "Failed to load" };
+                            } catch (e) { return { path: p, content: "Error loading file" }; }
+                        }));
+                        toolResult = { files };
+                    } else if (call.name === 'grep_search' && owner && repo) {
+                        // [신규] 코드 검색 구현
+                        toolResult = await githubService.searchCode(token, owner, repo, (call.args as any).query);
+                    } else if (call.name === 'glob' && owner && repo) {
+                        // [신규] Glob 탐색 구현 (트리를 가져와서 정규표현식 매칭)
+                        const pattern = (call.args as any).pattern || '';
+                        const tree = await githubService.fetchFileTree(token, owner, repo);
+                        // 단순 glob to regex 변환 (예: **/*.ts -> .*\.ts$)
+                        const regexStr = pattern.replace(/\./g, '\\.').replace(/\*\*/g, '.*').replace(/\*/g, '[^/]*');
+                        const regex = new RegExp(`^${regexStr}$`);
+                        const paths = tree.filter((f: any) => f.type === 'blob' && regex.test(f.path)).map((f: any) => f.path);
+                        toolResult = { paths: paths.slice(0, 50) };
+                    } else if (call.name === 'read_pr_diff' && owner && repo) {
+                        toolResult = await githubService.fetchPullRequestDiff(token, owner, repo, (call.args as any).pull_number);
                     }
+
+                    if (typeof toolResult === 'string' && toolResult.length > 10000) toolResult = toolResult.substring(0, 10000) + "...(truncated)";
                     res.write(`data: ${JSON.stringify({ type: 'thought', content: `Completed: ${call.name}` })}\n\n`);
                 } catch (e: any) {
                     toolResult = { error: e.message };

@@ -137,6 +137,39 @@ export const getAiChatStreamResponse = async (message: string, history: Content[
                         parameters: { type: "object", properties: { path: { type: "string", description: "파일 경로" } }, required: ["path"] }
                     },
                     {
+                        name: "read_many_files",
+                        description: "여러 개의 파일 내용을 한 번에 읽어옵니다.",
+                        parameters: { 
+                            type: "object", 
+                            properties: { 
+                                paths: { type: "array", items: { type: "string" }, description: "파일 경로 목록" } 
+                            }, 
+                            required: ["paths"] 
+                        }
+                    },
+                    {
+                        name: "glob",
+                        description: "패턴(예: **/*.ts)에 맞는 파일 목록을 찾습니다.",
+                        parameters: { 
+                            type: "object", 
+                            properties: { 
+                                pattern: { type: "string", description: "Glob 패턴" } 
+                            }, 
+                            required: ["pattern"] 
+                        }
+                    },
+                    {
+                        name: "grep_search",
+                        description: "저장소 내 파일 내용에서 특정 문자열이나 정규표현식을 검색합니다.",
+                        parameters: { 
+                            type: "object", 
+                            properties: { 
+                                query: { type: "string", description: "검색어" } 
+                            }, 
+                            required: ["query"] 
+                        }
+                    },
+                    {
                         name: "read_pr_diff",
                         description: "GitHub PR의 변경 사항을 읽어옵니다.",
                         parameters: { type: "object", properties: { pull_number: { type: "number", description: "PR 번호" } }, required: ["pull_number"] }
@@ -151,7 +184,7 @@ export const getAiChatStreamResponse = async (message: string, history: Content[
             systemInstruction: `당신은 RepoInsight의 전문 AI 아키텍트입니다. 
             당신의 미션은 Git 기반 리포지토리를 대상으로 보안 취약점, 코드 품질, 기술부채, 진척도, 리스크를 종합 진단하는 것입니다.
             현재 분석 대상 저장소: ${repoContext || '선택되지 않음'}.
-            반드시 list_files와 read_file 도구를 사용하여 실제 코드를 정밀 분석한 후 데이터를 기반으로 통찰력 있는 답변을 제공하세요.`
+            반드시 가용한 MCP 도구(list_files, read_file, glob, grep_search 등)를 사용하여 실제 코드를 정밀 분석한 후 데이터를 기반으로 통찰력 있는 답변을 제공하세요.`
         });
         
         let sanitizedHistory = [...history];
