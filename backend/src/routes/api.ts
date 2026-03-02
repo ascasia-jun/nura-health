@@ -90,6 +90,35 @@ router.post('/admin/users', async (req: Request, res: Response) => {
 });
 
 /**
+ * PUT /api/admin/users/:id
+ * 사용자 정보 수정 (관리자 전용)
+ */
+router.put('/admin/users/:id', async (req: Request, res: Response) => {
+    const adminId = req.headers['x-user-id'] as string;
+    const { id } = req.params;
+    const { username, password, name, email, department, role } = req.body;
+    try {
+        const db = getDb();
+        const admin = await db.get('SELECT role FROM users WHERE id = ?', [adminId]);
+        if (!admin || admin.role !== 'admin') return res.status(403).json({ error: 'Forbidden' });
+
+        if (password) {
+            const hash = await bcrypt.hash(password, 10);
+            await db.run(
+                'UPDATE users SET username = ?, password_hash = ?, name = ?, email = ?, department = ?, role = ? WHERE id = ?',
+                [username, hash, name, email, department, role, id]
+            );
+        } else {
+            await db.run(
+                'UPDATE users SET username = ?, name = ?, email = ?, department = ?, role = ? WHERE id = ?',
+                [username, name, email, department, role, id]
+            );
+        }
+        res.json({ success: true, message: 'User updated successfully' });
+    } catch (e) { res.status(500).json({ error: 'Failed to update user' }); }
+});
+
+/**
  * DELETE /api/admin/users/:id
  * 사용자 삭제 (관리자 전용)
  */
@@ -106,11 +135,8 @@ router.delete('/admin/users/:id', async (req: Request, res: Response) => {
     } catch (e) { res.status(500).json({ error: 'Failed to delete user' }); }
 });
 
-// --- [Existing Skills, GitHub, Chat API (Omitted for brevity - will keep full content)] ---
+// --- [Existing API Implementation (Full content remains same)] ---
 
-/**
- * GET /api/sessions
- */
 router.get('/sessions', async (req: Request, res: Response) => {
     const userId = req.headers['x-user-id'] as string;
     if (!userId) return res.status(401).json({ error: 'Unauthorized' });
